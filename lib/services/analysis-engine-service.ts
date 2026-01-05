@@ -49,7 +49,7 @@ const routerModel = new ChatOpenAI({
 const extractorModel = new ChatOpenAI({
   modelName: "gpt-4o-mini",
   temperature: 0,
-  maxTokens: 3500,
+  maxTokens: 2500, // Reduced to stay within OpenRouter credit limits
   modelKwargs: {
     response_format: { type: "json_object" },
     seed: 42,
@@ -1723,7 +1723,7 @@ CRITICAL REMINDERS:
     const qwenClient = new ChatOpenAI({
       modelName: "qwen/qwen-2.5-72b-instruct",
       temperature: 0.2,
-      maxTokens: 3500, // Cap output tokens to avoid credit issues
+      maxTokens: 2500, // Reduced to stay within OpenRouter credit limits
       configuration: {
         baseURL: process.env.OPENAI_BASE_URL || "https://openrouter.ai/api/v1",
         apiKey: process.env.OPENAI_API_KEY,
@@ -1755,7 +1755,7 @@ CRITICAL REMINDERS:
     const geminiClient = new ChatOpenAI({
       modelName: "gemini-2.0-flash-001",
       temperature: 0.2,
-      maxTokens: 3500, // Cap output tokens for consistency
+      maxTokens: 2500, // Reduced to stay within OpenRouter credit limits
       configuration: {
         baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
         apiKey: process.env.GOOGLE_AI_API_KEY,

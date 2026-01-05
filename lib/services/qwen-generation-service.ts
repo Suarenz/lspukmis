@@ -92,7 +92,7 @@ class QwenGenerationService {
       baseURL: config?.baseURL || process.env.QWEN_BASE_URL || 'https://openrouter.ai/api/v1',
       generationConfig: config?.generationConfig || {
         temperature: 0.2,
-        maxOutputTokens: 8192, // Increased to prevent output truncation
+        maxOutputTokens: parseInt(process.env.QWEN_MAX_TOKENS || '2048', 10),
         topP: 0.95,
         topK: 40,
       },
