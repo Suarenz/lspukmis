@@ -4,16 +4,13 @@ import { useEffect, memo, lazy, Suspense } from "react"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/lib/auth-context"
 import { Navbar } from "@/components/navbar"
-import { Card } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Users, Download, Eye, FileText, BookOpen, Search, MessageSquare } from "lucide-react"
-import Link from "next/link"
 import Image from "next/image"
 import { ClientOnly } from "@/components/client-only-wrapper"
 
 // Lazy load non-critical sections for better initial load performance
 const StatsSection = lazy(() => import('./stats-section'));
 const QuickActionsSection = lazy(() => import('./quick-actions-section'));
+const ChartsSection = lazy(() => import('./charts-section'));
 const DocumentsSection = lazy(() => import('./documents-section'));
 const ActivitySection = lazy(() => import('./activity-section'));
 
@@ -106,18 +103,28 @@ export default function DashboardPage() {
             </Suspense>
           </div>
 
-          {/* Recent Documents - Non-critical section, lazy loaded */}
+          {/* Charts - Data Visualization */}
           <div className="mb-8">
             <Suspense fallback={<SectionLoader />}>
-              <DocumentsSection />
+              <ChartsSection />
             </Suspense>
           </div>
 
-          {/* Recent Activity - Non-critical section, lazy loaded */}
-          <div>
-            <Suspense fallback={<SectionLoader />}>
-              <ActivitySection />
-            </Suspense>
+          {/* Two-Column Layout: Recent Documents + Recent Activity */}
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+            {/* Left Column: Recent Documents (~60%) */}
+            <div className="lg:col-span-3">
+              <Suspense fallback={<SectionLoader />}>
+                <DocumentsSection />
+              </Suspense>
+            </div>
+
+            {/* Right Column: Recent Activity (~40%) */}
+            <div className="lg:col-span-2">
+              <Suspense fallback={<SectionLoader />}>
+                <ActivitySection />
+              </Suspense>
+            </div>
           </div>
         </main>
       </div>

@@ -4,6 +4,7 @@ import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/ca
 import { Button } from "@/components/ui/button";
 import { BookOpen, Search, Upload, FileText } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
 
 interface QuickActionProps {
   title: string;
@@ -17,37 +18,40 @@ interface QuickActionProps {
 const QuickActionCard = ({ action, delay }: { action: QuickActionProps; delay?: number }) => {
   const Icon = action.icon;
   const style = delay !== undefined ? { animationDelay: `${delay}s` } : {};
-  
-  const isPrimary = action.variant === "primary";
+  const [hovered, setHovered] = useState(false);
   
   return (
     <Link key={action.title} href={action.href}>
       <Card
-        className="animate-fade-in hover:shadow-lg transition-all hover:scale-105 cursor-pointer border-0"
+        className="animate-fade-in hover:shadow-lg transition-all hover:scale-[1.02] cursor-pointer"
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
         style={{
           ...style,
-          backgroundColor: isPrimary ? '#2B4385' : '#ffffff',
-          color: isPrimary ? '#ffffff' : '#000000',
+          backgroundColor: hovered ? '#2B4385' : '#ffffff',
+          borderColor: '#2B4385',
+          borderWidth: '1.5px',
+          borderStyle: 'solid',
         }}
       >
         <CardHeader>
           <div className="flex items-center gap-3">
             <div style={{
-              padding: '8px',
-              borderRadius: '8px',
-              backgroundColor: isPrimary ? 'rgba(255,255,255,0.2)' : 'rgba(43, 67, 133, 0.1)',
+              padding: '10px',
+              borderRadius: '12px',
+              backgroundColor: hovered ? 'rgba(255,255,255,0.2)' : 'rgba(43, 67, 133, 0.08)',
             }}>
               <Icon 
                 className="w-6 h-6" 
-                style={{ color: isPrimary ? '#ffffff' : '#2B4385' }} 
+                style={{ color: hovered ? '#ffffff' : '#2B4385' }} 
                 aria-hidden="true" 
               />
             </div>
             <div>
-              <CardTitle className="text-lg" style={{ color: isPrimary ? '#ffffff' : '#111827' }}>
+              <CardTitle className="text-lg" style={{ color: hovered ? '#ffffff' : '#1F2937' }}>
                 {action.title}
               </CardTitle>
-              <CardDescription style={{ color: isPrimary ? 'rgba(255,255,255,0.8)' : '#6B7280' }}>
+              <CardDescription style={{ color: hovered ? 'rgba(255,255,255,0.85)' : '#4B5563' }}>
                 {action.description}
               </CardDescription>
             </div>

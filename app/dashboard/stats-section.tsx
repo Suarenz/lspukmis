@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { FileText, Users, Download, Eye } from "lucide-react";
+import { FileText, Users, Download, Eye, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import AuthService from "@/lib/services/auth-service";
 
 interface StatCardProps {
@@ -11,8 +11,31 @@ interface StatCardProps {
   icon: React.ElementType;
   color: string;
   bgColor: string;
+  trend?: number;
   delay?: number;
 }
+
+const TrendIndicator = ({ trend }: { trend?: number }) => {
+  if (trend === undefined || trend === null) return null;
+  
+  if (trend > 0) {
+    return (
+      <span className="inline-flex items-center gap-0.5 text-xs font-medium text-emerald-600">
+        <TrendingUp className="w-3 h-3" />
+        +{trend} this week
+      </span>
+    );
+  }
+  if (trend < 0) {
+    return (
+      <span className="inline-flex items-center gap-0.5 text-xs font-medium text-red-500">
+        <TrendingDown className="w-3 h-3" />
+        {trend} this week
+      </span>
+    );
+  }
+  return null;
+};
 
 const StatCard = ({ stat, delay }: { stat: StatCardProps; delay: number }) => {
   const Icon = stat.icon;
@@ -27,9 +50,9 @@ const StatCard = ({ stat, delay }: { stat: StatCardProps; delay: number }) => {
     >
       <CardHeader className="flex flex-row items-center justify-between pb-2">
         <CardTitle className="text-sm font-medium text-gray-500 max-w-[70%] truncate">{stat.title}</CardTitle>
-        <div className={`p-2 rounded-lg ${stat.bgColor}`}>
+        <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: stat.bgColor }}>
           {Icon ? (
-            <Icon className={`w-5 h-5 ${stat.color}`} aria-hidden="true" style={{minWidth: '20px', minHeight: '20px'}} />
+            <Icon className="w-5 h-5" style={{ color: stat.color }} aria-hidden="true" />
           ) : (
             <div className="w-5 h-5 bg-gray-200 rounded-sm flex items-center justify-center">
               <svg className="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -45,6 +68,9 @@ const StatCard = ({ stat, delay }: { stat: StatCardProps; delay: number }) => {
         ) : (
           <div className="text-3xl font-bold text-gray-900 truncate">{stat.value}</div>
         )}
+        <div className="mt-1">
+          <TrendIndicator trend={stat.trend} />
+        </div>
       </CardContent>
     </Card>
   );
@@ -54,164 +80,13 @@ export default function StatsSection() {
   const [stats, setStats] = useState<StatCardProps[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        // Get the access token to ensure it's still valid
-        const token = await AuthService.getAccessToken();
-        if (!token) {
-          // If no token is available, set default stats and stop loading
-          setStats([
-            {
-              title: "Total Documents",
-              value: "0",
-              icon: FileText,
-              color: "#2B4385",
-              bgColor: "rgba(43, 67, 133, 0.1)",
-            },
-            {
-              title: "Total Users",
-              value: "0",
-              icon: Users,
-              color: "#2E8B57",
-              bgColor: "rgba(46, 139, 87, 0.1)",
-            },
-            {
-              title: "Total Downloads",
-              value: "0",
-              icon: Download,
-              color: "#C04E3A",
-              bgColor: "rgba(192, 78, 58, 0.1)",
-            },
-            {
-              title: "Total Views",
-              value: "0",
-              icon: Eye,
-              color: "#2B4385",
-              bgColor: "rgba(43, 67, 133, 0.1)",
-            },
-          ]);
-          setLoading(false);
-          return;
-        }
-
-        const response = await fetch('/api/analytics', {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          }
-        });
-        if (response.ok) {
-          const data = await response.json();
-          const newStats = [
-            {
-              title: "Total Documents",
-              value: data.totalDocuments.toLocaleString(),
-              icon: FileText,
-              color: "#2B4385",
-              bgColor: "rgba(43, 67, 133, 0.1)",
-            },
-            {
-              title: "Total Users",
-              value: data.totalUsers.toLocaleString(),
-              icon: Users,
-              color: "#2E8B57",
-              bgColor: "rgba(46, 139, 87, 0.1)",
-            },
-            {
-              title: "Total Downloads",
-              value: data.totalDownloads.toLocaleString(),
-              icon: Download,
-              color: "#C04E3A",
-              bgColor: "rgba(192, 78, 58, 0.1)",
-            },
-            {
-              title: "Total Views",
-              value: data.totalViews.toLocaleString(),
-              icon: Eye,
-              color: "#2B4385",
-              bgColor: "rgba(43, 67, 133, 0.1)",
-            },
-          ];
-          setStats(newStats);
-        } else if (response.status === 401) {
-          // If we get a 401 (unauthorized) error, the token might have expired
-          console.error('Authentication token expired, logging out user');
-          // Log out the user since token is no longer valid
-          await AuthService.logout();
-        } else if (response.status === 403) {
-          // If we get a 403 (forbidden) error, user doesn't have permission
-          console.error('User does not have permission to access stats');
-          // Get user role to display in access level
-          const userData = await AuthService.getCurrentUser();
-          // Set default stats for users without permission
-          setStats([
-            {
-              title: "Your Documents",
-              value: "0",
-              icon: FileText,
-              color: "#2B4385",
-              bgColor: "rgba(43, 67, 133, 0.1)",
-            },
-            {
-              title: "Your Downloads",
-              value: "0",
-              icon: Download,
-              color: "#2E8B57",
-              bgColor: "rgba(46, 139, 87, 0.1)",
-            },
-            {
-              title: "Your Views",
-              value: "0",
-              icon: Eye,
-              color: "#C04E3A",
-              bgColor: "rgba(192, 78, 58, 0.1)",
-            },
-            {
-              title: "Access Level",
-              value: userData?.role || "User",
-              icon: Users,
-              color: "#2B4385",
-              bgColor: "rgba(43, 67, 133, 0.1)",
-            },
-          ]);
-        } else {
-          console.error('Failed to fetch stats:', response.status);
-          // Set default stats if API call fails
-          setStats([
-            {
-              title: "Total Documents",
-              value: "0",
-              icon: FileText,
-              color: "#2B4385",
-              bgColor: "rgba(43, 67, 133, 0.1)",
-            },
-            {
-              title: "Total Users",
-              value: "0",
-              icon: Users,
-              color: "#2E8B57",
-              bgColor: "rgba(46, 139, 87, 0.1)",
-            },
-            {
-              title: "Total Downloads",
-              value: "0",
-              icon: Download,
-              color: "#C04E3A",
-              bgColor: "rgba(192, 78, 58, 0.1)",
-            },
-            {
-              title: "Total Views",
-              value: "0",
-              icon: Eye,
-              color: "#2B4385",
-              bgColor: "rgba(43, 67, 133, 0.1)",
-            },
-          ]);
-        }
-      } catch (error) {
-        console.error('Error fetching stats:', error);
-        // Set default stats if there's an error
+  const fetchStats = async (isPoll: boolean = false) => {
+    try {
+      if (!isPoll) setLoading(true);
+      // Get the access token to ensure it's still valid
+      const token = await AuthService.getAccessToken();
+      if (!token) {
+        // If no token is available, set default stats and stop loading
         setStats([
           {
             title: "Total Documents",
@@ -242,12 +117,76 @@ export default function StatsSection() {
             bgColor: "rgba(43, 67, 133, 0.1)",
           },
         ]);
-      } finally {
         setLoading(false);
+        return;
       }
-    };
 
+      const response = await fetch('/api/analytics', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const trends = data.trends || { documents: 0, users: 0, downloads: 0, views: 0 };
+        const newStats = [
+          {
+            title: "Total Documents",
+            value: data.totalDocuments.toLocaleString(),
+            icon: FileText,
+            color: "#2B4385",
+            bgColor: "rgba(43, 67, 133, 0.1)",
+            trend: trends.documents,
+          },
+          {
+            title: "Total Users",
+            value: data.totalUsers.toLocaleString(),
+            icon: Users,
+            color: "#2E8B57",
+            bgColor: "rgba(46, 139, 87, 0.1)",
+            trend: trends.users,
+          },
+          {
+            title: "Total Downloads",
+            value: data.totalDownloads.toLocaleString(),
+            icon: Download,
+            color: "#C04E3A",
+            bgColor: "rgba(192, 78, 58, 0.1)",
+            trend: trends.downloads,
+          },
+          {
+            title: "Total Views",
+            value: data.totalViews.toLocaleString(),
+            icon: Eye,
+            color: "#2B4385",
+            bgColor: "rgba(43, 67, 133, 0.1)",
+            trend: trends.views,
+          },
+        ];
+        setStats(newStats);
+      } else if (response.status === 401) {
+        // If we get a 401 (unauthorized) error, the token might have expired
+        console.error('Authentication token expired, logging out user');
+        // Log out the user since token is no longer valid
+        await AuthService.logout();
+      }
+    } catch (error) {
+      console.error('Error fetching stats:', error);
+    } finally {
+      if (!isPoll) setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchStats();
+
+    // Set up polling interval for realtime updates (every 30 seconds)
+    const interval = setInterval(() => {
+      fetchStats(true);
+    }, 30000);
+
+    return () => clearInterval(interval);
   }, []);
 
  if (loading) {

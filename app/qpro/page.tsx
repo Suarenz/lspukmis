@@ -108,13 +108,13 @@ export default function QPROPage() {
   return (
     <>
       <Navbar />
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen bg-slate-50">
       {/* Header Section */}
-      <div className="border-b bg-card">
+      <div className="bg-white border-b">
         <div className="container mx-auto px-4 py-6">
           <div className="flex flex-col gap-4">
             <div>
-              <h1 className="text-3xl font-bold tracking-tight">Quarterly Physical Report of Operations</h1>
+              <h1 className="text-3xl font-semibold tracking-tight text-gray-900">Quarterly Physical Report of Operations</h1>
             </div>
 
             {/* Filter Bar - "Context Bar" */}
@@ -172,9 +172,9 @@ export default function QPROPage() {
               <div className="flex items-center gap-2">
                 <label className="text-sm font-medium whitespace-nowrap">Quarter:</label>
                 <Tabs value={selectedQuarter.toString()} onValueChange={(val) => setSelectedQuarter(parseInt(val))}>
-                  <TabsList>
+                  <TabsList className="bg-gray-100">
                     {quarters.map((q) => (
-                      <TabsTrigger key={q} value={q.toString()} className="px-4">
+                      <TabsTrigger key={q} value={q.toString()} className="px-4 data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-sm">
                         Q{q}
                       </TabsTrigger>
                     ))}
@@ -190,7 +190,7 @@ export default function QPROPage() {
       <div className="container mx-auto px-4 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Target Board */}
-          <Card className="p-6">
+          <Card className="p-6 bg-white border-none shadow-md">
             <TargetBoardPanel 
               year={selectedYear}
               quarter={selectedQuarter}
@@ -201,7 +201,7 @@ export default function QPROPage() {
           </Card>
 
           {/* Action Zone */}
-          <Card className="p-6">
+          <Card className="p-6 bg-white border-none shadow-md">
             <ActionZonePanel 
               year={selectedYear}
               quarter={selectedQuarter}

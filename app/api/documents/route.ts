@@ -178,7 +178,7 @@ export async function POST(request: NextRequest) {
       // Create the document in the database
       console.log('Creating document in database...');
       // Use default category since it's no longer provided in form
-      const defaultCategory = "Uncategorized";
+      const defaultCategory = "Other files";
       
       const document = await enhancedDocumentService.createDocument(
         title,

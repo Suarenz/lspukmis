@@ -221,7 +221,7 @@ class SuperMapper {
       description: mappedData.description || rawData.description || rawData.content || rawData.text || rawData.summary || '',
       fileName: mappedData.fileName || rawData.fileName || rawData.originalFileName || rawData.name || 'unknown.pdf',
       fileUrl: mappedData.fileUrl || rawData.fileUrl || rawData.url || rawData.documentUrl || rawData.source,
-      category: mappedData.category || rawData.category || rawData.type || rawData.documentType || 'Uncategorized',
+      category: mappedData.category || rawData.category || rawData.type || rawData.documentType || 'Other files',
       tags: mappedData.tags || rawData.tags || rawData.keywords || [],
       uploadedBy: mappedData.uploadedBy || rawData.uploadedBy || rawData.author || rawData.creator || rawData.uploader || 'Unknown',
       uploadedAt: mappedData.uploadedAt ? new Date(mappedData.uploadedAt as string) :

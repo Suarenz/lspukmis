@@ -14,7 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Menu, X, Search, MessageSquare, BarChart3, LogOut, UserRound, File, ClipboardCheck, Home } from "lucide-react"
+import { Menu, X, Search, MessageSquare, BarChart3, LogOut, UserRound, File, ClipboardCheck, Home, Plus } from "lucide-react"
 import Image from "next/image"
 import { cn } from "@/lib/utils"
 
@@ -145,8 +145,8 @@ export function Navbar() {
           </div>
         </div>
 
-        {/* Right Side: User Profile */}
-        <div className="flex items-center gap-4">
+        {/* Right Side: Upload Button + User Profile */}
+        <div className="flex items-center gap-3">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="gap-2">

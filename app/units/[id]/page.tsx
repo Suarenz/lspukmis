@@ -631,7 +631,7 @@ export default function UnitPage() {
                         
                           {/* Pill Tags */}
                           <div className="flex flex-wrap gap-2 mb-4 min-h-[2rem]">
-                            {doc.category && doc.category !== "Uncategorized" && (
+                            {doc.category && doc.category !== "Other files" && (
                               <span 
                                 className="px-3 py-1 text-xs font-medium rounded-full"
                                 style={{ backgroundColor: '#F3F4F6', color: '#6B7280' }}

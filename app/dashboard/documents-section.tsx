@@ -2,7 +2,7 @@
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Download, Eye, Loader2, FileText, FileSpreadsheet, FileImage, File } from "lucide-react";
+import { Download, Eye, Loader2, FileText, FileSpreadsheet, FileImage, File, Pencil, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Document } from "@/lib/types";
@@ -41,45 +41,88 @@ const getCleanTitle = (title: string) => {
   return title;
 };
 
-const DocumentCard = ({ doc, delay }: { doc: any; delay?: number }) => {
+const DocumentCard = ({ doc, delay, isAdmin }: { doc: any; delay?: number; isAdmin?: boolean }) => {
   const style = delay !== undefined ? { animationDelay: `${delay}s` } : {};
   const { icon: FileIcon, color } = getFileIcon(doc.title);
   const cleanTitle = getCleanTitle(doc.title);
   
+  const handleDownload = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      const token = await AuthService.getAccessToken();
+      if (!token) return;
+      window.open(`/api/documents/${doc.id}/download-direct?token=${token}`, '_blank');
+    } catch (err) {
+      console.error('Download error:', err);
+    }
+  };
+
   return (
     <Card
       key={doc.id}
-      className="animate-fade-in hover:shadow-lg transition-shadow border-0 bg-white"
+      className="animate-fade-in hover:shadow-lg transition-shadow border-0 bg-white group"
       style={style}
     >
-      <CardHeader>
+      <CardHeader className="pb-3">
         <div className="flex items-start gap-3">
-          <div className="p-2 rounded-lg bg-gray-50" style={{ color }}>
+          <div className="p-2 rounded-lg bg-gray-50 shrink-0" style={{ color }}>
             <FileIcon className="w-5 h-5" />
           </div>
           <div className="flex-1 min-w-0">
-            <CardTitle 
-              className="text-lg line-clamp-1 text-gray-900" 
-              title={doc.title}
-            >
-              {cleanTitle}
-            </CardTitle>
-            <CardDescription className="line-clamp-2">{doc.description}</CardDescription>
+            <Link href={`/repository?doc=${doc.id}`}>
+              <CardTitle 
+                className="text-base line-clamp-1 text-gray-900 hover:text-[#2B4385] hover:underline decoration-[#2B4385]/30 underline-offset-2 transition-colors cursor-pointer" 
+                title={doc.title}
+              >
+                {cleanTitle}
+              </CardTitle>
+            </Link>
+            <CardDescription className="line-clamp-1 mt-0.5 text-gray-500">{doc.description}</CardDescription>
           </div>
         </div>
       </CardHeader>
-      <CardContent>
-        <div className="flex items-center gap-4 text-sm text-gray-500">
+      <CardContent className="pt-0">
+        <div className="flex items-center gap-3 text-sm text-gray-500">
           <div className="flex items-center gap-1" style={{minWidth: '40px'}}>
-            <Download className="w-4 h-4" style={{color: '#2B4385'}} aria-hidden="true" />
-            <span>{doc.downloadsCount || doc.downloads || 0}</span>
+            <Download className="w-3.5 h-3.5" style={{color: '#2B4385'}} aria-hidden="true" />
+            <span className="text-xs">{doc.downloadsCount || doc.downloads || 0}</span>
           </div>
           <div className="flex items-center gap-1" style={{minWidth: '40px'}}>
-            <Eye className="w-4 h-4" style={{color: '#2E8B57'}} aria-hidden="true" />
-            <span>{doc.viewsCount || doc.views || 0}</span>
+            <Eye className="w-3.5 h-3.5" style={{color: '#2E8B57'}} aria-hidden="true" />
+            <span className="text-xs">{doc.viewsCount || doc.views || 0}</span>
           </div>
-          <div className="ml-auto">
-            <span className="px-2 py-1 rounded text-xs font-medium" style={{ backgroundColor: 'rgba(43, 67, 133, 0.1)', color: '#2B4385' }}>{doc.category}</span>
+          <div className="ml-auto flex items-center gap-1">
+            <span className="px-2 py-0.5 rounded text-xs font-medium" style={{ backgroundColor: 'rgba(43, 67, 133, 0.1)', color: '#2B4385' }}>{doc.category}</span>
+            
+            {/* Inline action buttons */}
+            <div className="flex items-center gap-0.5 ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button
+                onClick={handleDownload}
+                className="p-1.5 rounded-md hover:bg-gray-100 transition-colors"
+                title="Download"
+              >
+                <Download className="w-3.5 h-3.5 text-gray-500 hover:text-[#2B4385]" />
+              </button>
+              <Link href={`/repository?doc=${doc.id}`}>
+                <button
+                  className="p-1.5 rounded-md hover:bg-gray-100 transition-colors"
+                  title="View"
+                >
+                  <ExternalLink className="w-3.5 h-3.5 text-gray-500 hover:text-[#2E8B57]" />
+                </button>
+              </Link>
+              {isAdmin && (
+                <Link href={`/repository?doc=${doc.id}&edit=true`}>
+                  <button
+                    className="p-1.5 rounded-md hover:bg-gray-100 transition-colors"
+                    title="Edit"
+                  >
+                    <Pencil className="w-3.5 h-3.5 text-gray-500 hover:text-[#C04E3A]" />
+                  </button>
+                </Link>
+              )}
+            </div>
           </div>
         </div>
       </CardContent>
@@ -110,7 +153,7 @@ export default function DocumentsSection() {
         }
 
         // Get recent documents from the API
-        const response = await fetch(`/api/documents?page=1&limit=4&sort=uploadedAt&order=desc`, {
+        const response = await fetch(`/api/documents?page=1&limit=5&sort=uploadedAt&order=desc`, {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
@@ -172,13 +215,13 @@ export default function DocumentsSection() {
           </Button>
         </Link>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-3">
         {recentDocuments.length > 0 ? (
           recentDocuments.map((doc, index) => (
-            <DocumentCard key={doc.id} doc={doc} delay={index * 0.1} />
+            <DocumentCard key={doc.id} doc={doc} delay={index * 0.1} isAdmin={user?.role === 'ADMIN'} />
           ))
         ) : (
-          <div className="col-span-2 text-center py-8 text-gray-500 bg-white rounded-xl">
+          <div className="text-center py-8 text-gray-500 bg-white rounded-xl">
             No recent documents available
           </div>
         )}

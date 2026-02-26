@@ -392,7 +392,7 @@ export default function DocumentPreviewPage() {
                   <span>By {document.uploadedBy}</span>
                   <span>•</span>
                   <span>{new Date(document.uploadedAt).toLocaleDateString()}</span>
-                  {document.category && document.category !== "Uncategorized" && (
+                  {document.category && document.category !== "Other files" && (
                     <>
                       <span>•</span>
                       <span>{document.category}</span>

@@ -312,7 +312,7 @@ class EnhancedDocumentService {
         data: {
           title,
           description: description || "", // Ensure description is not null
-          category: category || "Uncategorized", // Ensure category is not null
+          category: category || "Other files", // Ensure category is not null
           tags: tags || [], // Ensure tags is always an array, even if undefined
           uploadedBy: user.name,
           uploadedById: user.id, // Use the database user ID, not the Supabase auth ID
@@ -473,7 +473,7 @@ class EnhancedDocumentService {
         data: {
           ...(title && { title }),
           ...(description !== undefined && { description: description || "" }),
-          ...(category !== undefined && { category: category || "Uncategorized" }),
+          ...(category !== undefined && { category: category || "Other files" }),
           ...(tags !== undefined && { tags: tags || [] }),
           ...(unitId !== undefined && { unitId: unitId }), // Include unitId in the update if provided
           updatedAt: new Date(),

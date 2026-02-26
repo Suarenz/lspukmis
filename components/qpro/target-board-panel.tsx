@@ -49,28 +49,28 @@ interface AnalysisData {
 }
 
 const KRA_COLORS: { [key: string]: string } = {
-  "KRA 1": "bg-blue-500",
-  "KRA 2": "bg-green-500",
-  "KRA 3": "bg-purple-500",
-  "KRA 4": "bg-orange-500",
-  "KRA 5": "bg-red-500",
-  "KRA 6": "bg-teal-500",
-  "KRA 7": "bg-indigo-500",
-  "KRA 8": "bg-pink-500",
-  "KRA 9": "bg-cyan-500",
-  "KRA 10": "bg-lime-500",
-  "KRA 11": "bg-amber-500",
-  "KRA 12": "bg-emerald-500",
-  "KRA 13": "bg-violet-500",
-  "KRA 14": "bg-fuchsia-500",
-  "KRA 15": "bg-rose-500",
-  "KRA 16": "bg-sky-500",
-  "KRA 17": "bg-yellow-500",
-  "KRA 18": "bg-blue-600",
-  "KRA 19": "bg-green-600",
-  "KRA 20": "bg-purple-600",
-  "KRA 21": "bg-orange-600",
-  "KRA 22": "bg-red-600",
+  "KRA 1": "bg-blue-50 text-blue-700",
+  "KRA 2": "bg-emerald-50 text-emerald-700",
+  "KRA 3": "bg-purple-50 text-purple-700",
+  "KRA 4": "bg-orange-50 text-orange-700",
+  "KRA 5": "bg-rose-50 text-rose-700",
+  "KRA 6": "bg-teal-50 text-teal-700",
+  "KRA 7": "bg-indigo-50 text-indigo-700",
+  "KRA 8": "bg-pink-50 text-pink-700",
+  "KRA 9": "bg-cyan-50 text-cyan-700",
+  "KRA 10": "bg-lime-50 text-lime-700",
+  "KRA 11": "bg-amber-50 text-amber-700",
+  "KRA 12": "bg-emerald-50 text-emerald-700",
+  "KRA 13": "bg-violet-50 text-violet-700",
+  "KRA 14": "bg-fuchsia-50 text-fuchsia-700",
+  "KRA 15": "bg-rose-50 text-rose-700",
+  "KRA 16": "bg-sky-50 text-sky-700",
+  "KRA 17": "bg-yellow-50 text-yellow-700",
+  "KRA 18": "bg-blue-100 text-blue-800",
+  "KRA 19": "bg-emerald-100 text-emerald-800",
+  "KRA 20": "bg-purple-100 text-purple-800",
+  "KRA 21": "bg-orange-100 text-orange-800",
+  "KRA 22": "bg-rose-100 text-rose-800",
 }
 
 export function TargetBoardPanel({ year, quarter, unitId, unitName, refreshTrigger }: TargetBoardPanelProps) {
@@ -216,10 +216,10 @@ export function TargetBoardPanel({ year, quarter, unitId, unitName, refreshTrigg
                   {/* Header with KRA Badge and Expand Button */}
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-2 flex-1">
-                      <Badge className={`${KRA_COLORS[kra.kra_id]} text-white`}>
+                      <Badge className={`${KRA_COLORS[kra.kra_id]} border-0 font-semibold`}>
                         {kra.kra_id}
                       </Badge>
-                      <h3 className="font-semibold text-sm line-clamp-2">{kra.kra_title}</h3>
+                      <h3 className="font-medium text-sm text-gray-800 line-clamp-2">{kra.kra_title}</h3>
                     </div>
                     <div className="flex items-center gap-2">
                       {getStatusIcon(status)}
@@ -228,7 +228,7 @@ export function TargetBoardPanel({ year, quarter, unitId, unitName, refreshTrigg
 
                   {/* Guiding Principle */}
                   {kra.guiding_principle && (
-                    <div className="text-xs text-muted-foreground border-l-2 border-primary pl-3">
+                    <div className="text-xs text-gray-500 border-l-2 border-primary pl-3">
                       <span className="font-medium">Guiding Principle: </span>
                       {kra.guiding_principle}
                     </div>

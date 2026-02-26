@@ -10,6 +10,7 @@ export async function GET(request: NextRequest) {
   }
   
   const { user } = authResult;
+  const now = new Date();
 
   try {
     // Get basic stats based on user role
@@ -20,6 +21,8 @@ export async function GET(request: NextRequest) {
     let recentActivity: any[] = [];
     let categoryDistribution: any[] = [];
     let popularDocuments: any[] = [];
+    let uploadHistory: { date: string; count: number }[] = [];
+    let trends = { documents: 0, users: 0, downloads: 0, views: 0 };
 
     if (user.role === 'ADMIN') {
       // Admin can see all stats
@@ -52,7 +55,7 @@ export async function GET(request: NextRequest) {
       });
 
       categoryDistribution = categories.map((cat) => ({
-        category: cat.category || 'Uncategorized',
+        category: (cat.category === 'Uncategorized' || !cat.category) ? 'Other files' : cat.category,
         count: cat._count.category,
       }));
 
@@ -103,6 +106,61 @@ export async function GET(request: NextRequest) {
         type: 'upload',
       }));
 
+      // Upload history: count documents per month for the last 12 months
+      const uploadHistoryPromises = [];
+      for (let i = 11; i >= 0; i--) {
+        const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
+        uploadHistoryPromises.push(
+          prisma.document.count({
+            where: {
+              createdAt: {
+                gte: monthStart,
+                lt: monthEnd,
+              },
+            },
+          }).then((count) => ({
+            date: `${monthStart.getFullYear()}-${String(monthStart.getMonth() + 1).padStart(2, '0')}`,
+            count,
+          }))
+        );
+      }
+      uploadHistory = await Promise.all(uploadHistoryPromises);
+
+      // Trends: compare this week vs last week
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const dayOfWeek = todayStart.getDay(); // 0=Sun
+      const thisWeekStart = new Date(todayStart);
+      thisWeekStart.setDate(todayStart.getDate() - dayOfWeek);
+      const lastWeekStart = new Date(thisWeekStart);
+      lastWeekStart.setDate(thisWeekStart.getDate() - 7);
+
+      const [
+        docsThisWeek,
+        docsLastWeek,
+        usersThisWeek,
+        usersLastWeek,
+        downloadsThisWeek,
+        downloadsLastWeek,
+        viewsThisWeek,
+        viewsLastWeek
+      ] = await Promise.all([
+        prisma.document.count({ where: { createdAt: { gte: thisWeekStart } } }),
+        prisma.document.count({ where: { createdAt: { gte: lastWeekStart, lt: thisWeekStart } } }),
+        prisma.user.count({ where: { createdAt: { gte: thisWeekStart } } }),
+        prisma.user.count({ where: { createdAt: { gte: lastWeekStart, lt: thisWeekStart } } }),
+        prisma.documentDownload.count({ where: { downloadedAt: { gte: thisWeekStart } } }),
+        prisma.documentDownload.count({ where: { downloadedAt: { gte: lastWeekStart, lt: thisWeekStart } } }),
+        prisma.documentView.count({ where: { viewedAt: { gte: thisWeekStart } } }),
+        prisma.documentView.count({ where: { viewedAt: { gte: lastWeekStart, lt: thisWeekStart } } }),
+      ]);
+
+      trends = {
+        documents: docsThisWeek - docsLastWeek,
+        users: usersThisWeek - usersLastWeek,
+        downloads: downloadsThisWeek - downloadsLastWeek,
+        views: viewsThisWeek - viewsLastWeek,
+      };
     } else if (user.role === 'FACULTY') {
       // Faculty can see their unit's stats
       const userWithUnit = await prisma.user.findUnique({
@@ -125,6 +183,37 @@ export async function GET(request: NextRequest) {
 
         totalDownloads = documents.reduce((sum, doc) => sum + (doc.downloadsCount || 0), 0);
         totalViews = documents.reduce((sum, doc) => sum + (doc.viewsCount || 0), 0);
+
+        // Trends for Faculty (unit-specific)
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const dayOfWeek = todayStart.getDay(); 
+        const thisWeekStart = new Date(todayStart);
+        thisWeekStart.setDate(todayStart.getDate() - dayOfWeek);
+        const lastWeekStart = new Date(thisWeekStart);
+        lastWeekStart.setDate(thisWeekStart.getDate() - 7);
+
+        const [
+          docsThisWeek,
+          docsLastWeek,
+          downloadsThisWeek,
+          downloadsLastWeek,
+          viewsThisWeek,
+          viewsLastWeek
+        ] = await Promise.all([
+          prisma.document.count({ where: { unitId: userWithUnit.unitId, createdAt: { gte: thisWeekStart } } }),
+          prisma.document.count({ where: { unitId: userWithUnit.unitId, createdAt: { gte: lastWeekStart, lt: thisWeekStart } } }),
+          prisma.documentDownload.count({ where: { document: { unitId: userWithUnit.unitId }, downloadedAt: { gte: thisWeekStart } } }),
+          prisma.documentDownload.count({ where: { document: { unitId: userWithUnit.unitId }, downloadedAt: { gte: lastWeekStart, lt: thisWeekStart } } }),
+          prisma.documentView.count({ where: { document: { unitId: userWithUnit.unitId }, viewedAt: { gte: thisWeekStart } } }),
+          prisma.documentView.count({ where: { document: { unitId: userWithUnit.unitId }, viewedAt: { gte: lastWeekStart, lt: thisWeekStart } } }),
+        ]);
+
+        trends = {
+          documents: docsThisWeek - docsLastWeek,
+          users: 0, // Users are global, but we can keep it 0 or calculate global user growth
+          downloads: downloadsThisWeek - downloadsLastWeek,
+          views: viewsThisWeek - viewsLastWeek,
+        };
 
         // Get recent documents from their unit
         const recentDocs = await prisma.document.findMany({
@@ -202,6 +291,8 @@ export async function GET(request: NextRequest) {
       recentActivity,
       popularDocuments,
       categoryDistribution,
+      uploadHistory,
+      trends,
     });
 
   } catch (error) {

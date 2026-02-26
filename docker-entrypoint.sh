@@ -144,5 +144,24 @@ echo "   Student: student@lspu.edu.ph / student123"
 echo "=========================================="
 echo ""
 
-# Start the Next.js application
-exec node server.js
+# Start the application
+# If arguments are provided, execute them (default behavior for Docker)
+# Otherwise, check NODE_ENV and fall back to standard execution
+if [ "$#" -gt 0 ]; then
+  echo "🏃 Running custom command: $@"
+  exec "$@"
+elif [ "$NODE_ENV" = "development" ]; then
+  echo "⚒️ Starting in DEVELOPMENT mode with hot reloading..."
+  # Ensure prisma is ready in dev
+  npx prisma generate
+  exec npm run dev
+else
+  echo "🚀 Starting in PRODUCTION mode..."
+  # In production standalone build, node server.js is expected
+  if [ -f "server.js" ]; then
+    exec node server.js
+  else
+    echo "⚠️ server.js not found, falling back to npm start"
+    exec npm start
+  fi
+fi

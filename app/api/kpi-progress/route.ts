@@ -812,18 +812,18 @@ export async function GET(request: NextRequest) {
       // For cumulative KPIs, use the cumulative aggregate value (includes prior years)
       let finalValue: number;
       let contributingYearsForEntry: number[] | null = null;
+      const aggTargetType = String(agg.target_type || 'count').toUpperCase();
       
       if (isCumulative && hasManualOverride) {
         // Use cumulative aggregate which includes current year's manual override + prior years
         const cumulativeKey = `${kraMapKey}|${agg.initiative_id}|${agg.quarter}`;
         const cumulativeData = cumulativeAggregates.get(cumulativeKey);
         if (cumulativeData) {
-          const targetType = String(agg.target_type || 'count').toUpperCase();
-          if (targetType === 'PERCENTAGE') {
+          if (aggTargetType === 'PERCENTAGE') {
             finalValue = Math.min(100, cumulativeData.total);
-          } else if (targetType === 'SNAPSHOT' || targetType === 'MILESTONE' || targetType === 'BOOLEAN' || targetType === 'TEXT_CONDITION') {
+          } else if (aggTargetType === 'SNAPSHOT' || aggTargetType === 'MILESTONE' || aggTargetType === 'BOOLEAN' || aggTargetType === 'TEXT_CONDITION') {
             finalValue = cumulativeData.latestValue;
-          } else if (targetType === 'RATE') {
+          } else if (aggTargetType === 'RATE') {
             finalValue = cumulativeData.count > 0 ? Math.round(cumulativeData.total / cumulativeData.count) : 0;
           } else {
             finalValue = cumulativeData.total;
@@ -841,18 +841,29 @@ export async function GET(request: NextRequest) {
         : qproValue > 0 ? 'qpro' 
         : 'none';
       
+      // For TEXT_CONDITION, return the text current_value instead of numeric manual_override
+      let displayCurrentValue: number | string = finalValue;
+      if (aggTargetType === 'TEXT_CONDITION' && hasManualOverride && agg.current_value) {
+        displayCurrentValue = agg.current_value; // Return "Met", "Not Met", "In Progress"
+      } else if (aggTargetType === 'TEXT_CONDITION' && hasManualOverride) {
+         // Fallback if current_value is missing but manual_override exists
+         if (finalValue >= 1) displayCurrentValue = 'Met';
+         else if (finalValue >= 0.5) displayCurrentValue = 'In Progress';
+         else displayCurrentValue = 'Not Met'; 
+      }
+      
       if (!progressItem) {
         progressItem = {
           initiativeId: agg.initiative_id,
           year: agg.year,
           quarter: agg.quarter,
           targetValue: agg.target_value?.toNumber() ?? 0,
-          currentValue: finalValue,
+          currentValue: displayCurrentValue,
           achievementPercent: agg.achievement_percent?.toNumber() ?? 0,
           status: (agg.status as any) || 'PENDING',
           submissionCount: agg.submission_count,
           participatingUnits: (agg.participating_units as string[]) || [],
-          targetType: (agg.target_type as any) || 'COUNT',
+          targetType: (aggTargetType as any) || 'COUNT',
           manualOverride: hasManualOverride ? agg.manual_override?.toNumber() : null,
           manualOverrideReason: agg.manual_override_reason || null,
           manualOverrideBy: agg.manual_override_by || null,
@@ -867,7 +878,13 @@ export async function GET(request: NextRequest) {
         progressItems.push(progressItem);
       } else {
         // Update with aggregation data (more accurate)
-        progressItem.currentValue = finalValue;
+        progressItem.currentValue = displayCurrentValue;
+        
+        // Update targetType from aggregation record (authoritative source)
+        if (aggTargetType) {
+          progressItem.targetType = aggTargetType as any;
+        }
+        
         if (agg.achievement_percent != null) {
           progressItem.achievementPercent = agg.achievement_percent.toNumber();
         }
@@ -1040,7 +1057,19 @@ export async function GET(request: NextRequest) {
       }
       
       // Update progress item with contribution data
-      progressItem.currentValue = finalContribValue;
+      // For TEXT_CONDITION, preserve the text label from current_value instead of numeric
+      if (targetType === 'TEXT_CONDITION') {
+        // TEXT_CONDITION stores qualitative values - keep existing text label if set via manual override
+        // Only update to numeric if there's no text current_value already set
+        if (!progressItem.currentValue || typeof progressItem.currentValue === 'number') {
+          // Map numeric back to text: 1 = Met, 0.5 = In Progress, 0 = Not Met
+          if (finalContribValue >= 1) progressItem.currentValue = 'Met';
+          else if (finalContribValue > 0) progressItem.currentValue = 'In Progress';
+          else progressItem.currentValue = 'Not Met';
+        }
+      } else {
+        progressItem.currentValue = finalContribValue;
+      }
       progressItem.submissionCount = contribData.count;
       progressItem.valueSource = 'qpro';
       
@@ -1138,12 +1167,20 @@ export async function GET(request: NextRequest) {
         finalContribValue = cumulativeData.total;
       }
       
+      // For TEXT_CONDITION, convert numeric back to text label
+      let displayCurrentValue: number | string = finalContribValue;
+      if (targetTypeUpper === 'TEXT_CONDITION') {
+        if (finalContribValue >= 1) displayCurrentValue = 'Met';
+        else if (finalContribValue > 0) displayCurrentValue = 'In Progress';
+        else displayCurrentValue = 'Not Met';
+      }
+
       const progressItem: KPIProgressItem = {
         initiativeId,
         year,
         quarter: contribQuarter,
         targetValue: targetValue,
-        currentValue: finalContribValue,
+        currentValue: displayCurrentValue,
         achievementPercent: 0,
         status: 'PENDING',
         submissionCount: cumulativeData.count,
@@ -1420,14 +1457,16 @@ export async function PATCH(request: NextRequest) {
           if (value === 'Met') {
             achievementPercent = 100;
             status = 'MET';
+            manualOverrideNum = 1;
           } else if (value === 'In Progress') {
             achievementPercent = 50;
             status = 'ON_TRACK';
+            manualOverrideNum = 0.5;
           } else {
             achievementPercent = 0;
             status = 'MISSED';
+            manualOverrideNum = 0;
           }
-          // Don't set manualOverrideNum for TEXT_CONDITION - keep it null
         } else if (finalTargetType === 'MILESTONE') {
           // Binary: 0% or 100%
           achievementPercent = (value === 1 || value === '1') ? 100 : 0;
@@ -1516,12 +1555,15 @@ export async function PATCH(request: NextRequest) {
         if (value === 'Met') {
           achievementPercent = 100;
           status = 'MET';
+          manualOverrideNum = 1;
         } else if (value === 'In Progress') {
           achievementPercent = 50;
           status = 'ON_TRACK';
+          manualOverrideNum = 0.5;
         } else {
           achievementPercent = 0;
           status = 'MISSED';
+          manualOverrideNum = 0;
         }
         effectiveValue = String(value);
       } else if (finalTargetType === 'MILESTONE') {

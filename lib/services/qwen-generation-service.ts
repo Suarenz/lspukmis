@@ -646,14 +646,23 @@ Now analyze the documents below to answer this query: "${query}"
       
       // Process each result
       for (const result of limitedResults) {
-        const hasVisuals = result.screenshots && result.screenshots.length > 0;
+        // Consolidate visual content sources
+        const allVisuals: string[] = [];
+        if (result.screenshots && Array.isArray(result.screenshots)) {
+          allVisuals.push(...result.screenshots);
+        }
+        if (result.visualContent && typeof result.visualContent === 'string') {
+          allVisuals.push(result.visualContent);
+        }
+
+        const hasVisuals = allVisuals.length > 0;
         const hasText = result.extractedText && result.extractedText.trim().length > 0;
         const title = result.title || 'Untitled Document';
         const confidence = result.confidenceScore || 0;
         
         console.log(`📄 Processing document "${title}" for Qwen:`, {
           hasVisuals,
-          visualCount: result.screenshots?.length || 0,
+          visualCount: allVisuals.length,
           hasText,
           textLength: result.extractedText?.length || 0,
           confidence
@@ -666,8 +675,8 @@ Now analyze the documents below to answer this query: "${query}"
         });
 
         // 1. Provide the Visuals (Universal for PDF, PNG, Excel, etc.)
-        if (hasVisuals && result.screenshots) {
-          for (const screenshot of result.screenshots) {
+        if (hasVisuals) {
+          for (const screenshot of allVisuals) {
               
           // MAGIC FIX: Detect Type from the string signature
           let realMimeType = 'image/jpeg';

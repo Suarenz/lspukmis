@@ -151,9 +151,9 @@ export function ActionZonePanel({ year, quarter, unitId, unitName, onAnalysisCom
         <div
           {...getRootProps()}
           className={`
-            border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all
+            border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all bg-slate-50
             ${isDragActive ? "border-primary bg-primary/5" : "border-muted-foreground/25"}
-            ${uploading ? "opacity-50 cursor-not-allowed" : "hover:border-primary hover:bg-muted/50"}
+            ${uploading ? "opacity-50 cursor-not-allowed" : "hover:border-primary hover:bg-primary/5"}
           `}
         >
           <input {...getInputProps()} />
@@ -184,7 +184,7 @@ export function ActionZonePanel({ year, quarter, unitId, unitName, onAnalysisCom
                   Supports .docx and .pdf files
                 </p>
               </div>
-              <Button variant="outline" size="sm" type="button">
+              <Button size="sm" type="button" className="bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-md px-4 py-2">
                 Or Click to Browse
               </Button>
             </div>
@@ -212,14 +212,16 @@ export function ActionZonePanel({ year, quarter, unitId, unitName, onAnalysisCom
 
       {!analysisId && !uploading && (
         <div className="pt-6 border-t">
-          <div className="text-center py-8 text-muted-foreground">
-            <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-muted flex items-center justify-center">
-              <FileText className="w-8 h-8" />
+          <div className="bg-gray-50 rounded-lg border border-dashed border-gray-200 p-6">
+            <div className="text-center py-4 text-muted-foreground">
+              <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-white shadow-sm flex items-center justify-center">
+                <FileText className="w-8 h-8" />
+              </div>
+              <p className="text-sm font-medium text-gray-600">Upload a QPRO report to see AI-powered insights</p>
+              <p className="text-xs mt-1 text-gray-400">
+                Activity matching • Gap analysis • Strategic recommendations
+              </p>
             </div>
-            <p className="text-sm">Upload a QPRO report to see AI-powered insights</p>
-            <p className="text-xs mt-1">
-              Activity matching • Gap analysis • Strategic recommendations
-            </p>
           </div>
         </div>
       )}

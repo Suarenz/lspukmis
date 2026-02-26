@@ -10,7 +10,6 @@ const inter = Inter({ subsets: ["latin"] })
 export const metadata: Metadata = {
  title: "LSPU KMIS - Knowledge Management Information System",
   description: "Laguna State Polytechnic University Knowledge Management System",
-  manifest: "/manifest.json",
     generator: 'v0.app'
 }
 

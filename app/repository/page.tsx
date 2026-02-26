@@ -315,7 +315,7 @@ export default function RepositoryPage() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
-          <div className="w-16 h-16 flex items-center justify-center mx-auto mb-4 overflow-hidden">
+          <div className="w-16 h-16 flex items-center justify-center mx-auto mb-4 overflow-hidden rounded-full bg-white shadow-sm border border-gray-100">
             <Image
               src="/LSPULogo.png"
               alt="LSPU Logo"
@@ -335,7 +335,7 @@ export default function RepositoryPage() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
-          <div className="w-16 h-16 flex items-center justify-center mx-auto mb-4 overflow-hidden">
+          <div className="w-16 h-16 flex items-center justify-center mx-auto mb-4 overflow-hidden rounded-full bg-white shadow-sm border border-gray-100">
             <Image
               src="/LSPULogo.png"
               alt="LSPU Logo"
@@ -355,7 +355,7 @@ export default function RepositoryPage() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
-          <div className="w-16 h-16 flex items-center justify-center mx-auto mb-4 overflow-hidden">
+          <div className="w-16 h-16 flex items-center justify-center mx-auto mb-4 overflow-hidden rounded-full bg-white shadow-sm border border-gray-100">
             <Image
               src="/LSPULogo.png"
               alt="LSPU Logo"
@@ -370,7 +370,7 @@ export default function RepositoryPage() {
     );
   }
 
-  const categories = ["all", "Uncategorized", "Research", "Academic", "Policy", "Extension", "Teaching"]; // Using standard categories
+  const categories = ["all", "Other files", "Research", "Academic", "Policy", "Extension", "Teaching"]; // Using standard categories
   
   // NEW: Use all units since there's no status property
   const activeUnits = units;
@@ -641,7 +641,7 @@ export default function RepositoryPage() {
                               {doc.unit.code || doc.unit.name}
                             </span>
                           )}
-                          {doc.category && doc.category !== "Uncategorized" && (
+                          {doc.category && doc.category !== "Other files" && (
                             <span 
                               className="px-3 py-1 text-xs font-medium rounded-full"
                               style={{ backgroundColor: '#F3F4F6', color: '#6B7280' }}
@@ -1172,3 +1172,4 @@ export default function RepositoryPage() {
     </ClientOnly>
   )
 }
+

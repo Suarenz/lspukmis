@@ -1,14 +1,13 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/lib/auth-context"
 import { Navbar } from "@/components/navbar"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { SearchIcon, FileText, TrendingUp, BotIcon, Eye } from "lucide-react"
+import { SearchIcon, FileText, TrendingUp, Eye } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import Image from "next/image"
 import AuthService from '@/lib/services/auth-service';
@@ -16,7 +15,12 @@ import { Document } from '@/lib/api/types';
 import SuperMapper from '@/lib/utils/super-mapper';
 import QwenResponseDisplay from '@/components/qwen-response-display';
 import { cleanDocumentTitle } from '@/lib/utils/document-utils';
-import { useToast } from '@/components/ui/use-toast';
+import ChatSearchInput, { type AttachedFile } from '@/components/chat-search-input';
+
+// Generate a unique session ID for this browser tab
+function generateSessionId() {
+  return `sess_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+}
 
 export default function SearchPage() {
   const { user, isAuthenticated, isLoading } = useAuth()
@@ -32,9 +36,14 @@ export default function SearchPage() {
   const [generationType, setGenerationType] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [loading, setLoading] = useState(false);
-  const [sources, setSources] = useState<any[]>([]); // State to store the sources used in the AI response
-  const [relevantDocumentUrl, setRelevantDocumentUrl] = useState<string | undefined>(undefined); // State to store the relevant document URL
-  const [noRelevantDocuments, setNoRelevantDocuments] = useState<boolean>(false); // State to track if no relevant documents were found
+  const [sources, setSources] = useState<any[]>([]);
+  const [relevantDocumentUrl, setRelevantDocumentUrl] = useState<string | undefined>(undefined);
+  const [noRelevantDocuments, setNoRelevantDocuments] = useState<boolean>(false);
+
+  // Chat-with-file state
+  const [attachedFile, setAttachedFile] = useState<AttachedFile | null>(null);
+  const [sessionId] = useState(() => generateSessionId());
+  const [chatDocumentName, setChatDocumentName] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -42,107 +51,228 @@ export default function SearchPage() {
     }
   }, [isAuthenticated, isLoading, router])
 
-  const performSearch = async () => {
-    if (searchQuery.trim()) {
-      setHasPerformedSearch(true);
-      setLoading(true);
-      setIsGenerating(true);
-      try {
-        const token = await AuthService.getAccessToken();
-        if (!token) {
-          throw new Error('No authentication token found');
+  // Cleanup temp document when file is removed or component unmounts
+  const cleanupTempDocument = useCallback(async (docName: string) => {
+    try {
+      const token = await AuthService.getAccessToken();
+      if (!token) return;
+      await fetch('/api/search/chat-cleanup', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ documentName: docName }),
+      });
+    } catch (err) {
+      console.error('[Search] Failed to cleanup temp document:', err);
+    }
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (chatDocumentName) {
+        cleanupTempDocument(chatDocumentName);
+      }
+    };
+  }, [chatDocumentName, cleanupTempDocument]);
+
+  // Handle file attachment — upload to temp Colivara collection
+  const handleFileAttach = useCallback(async (file: File) => {
+    setAttachedFile({ file, uploading: true });
+    setChatDocumentName(null);
+
+    try {
+      const token = await AuthService.getAccessToken();
+      if (!token) throw new Error('No authentication token');
+
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('sessionId', sessionId);
+
+      const response = await fetch('/api/search/chat-upload', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || `Upload failed (${response.status})`);
+      }
+
+      const data = await response.json();
+      setAttachedFile({ file, documentName: data.documentName, uploading: false });
+      setChatDocumentName(data.documentName);
+
+      // Clear previous search results when new file is attached
+      setSearchResults({ documents: [] });
+      setGeneratedResponse(null);
+      setSources([]);
+      setHasPerformedSearch(false);
+      setNoRelevantDocuments(false);
+    } catch (err) {
+      console.error('[Search] File upload error:', err);
+      setAttachedFile({
+        file,
+        uploading: false,
+        error: err instanceof Error ? err.message : 'Upload failed',
+      });
+    }
+  }, [sessionId]);
+
+  // Handle file removal
+  const handleFileRemove = useCallback(() => {
+    if (chatDocumentName) {
+      cleanupTempDocument(chatDocumentName);
+    }
+    setAttachedFile(null);
+    setChatDocumentName(null);
+    // Clear chat-specific results
+    setSearchResults({ documents: [] });
+    setGeneratedResponse(null);
+    setSources([]);
+    setHasPerformedSearch(false);
+    setNoRelevantDocuments(false);
+  }, [chatDocumentName, cleanupTempDocument]);
+
+  // Perform search — routes to either global search or chat-with-file query
+  const performSearch = useCallback(async (query: string) => {
+    if (!query.trim()) return;
+
+    setSearchQuery(query);
+    setHasPerformedSearch(true);
+    setLoading(true);
+    setIsGenerating(true);
+
+    try {
+      const token = await AuthService.getAccessToken();
+      if (!token) throw new Error('No authentication token found');
+
+      let data: any;
+
+      if (chatDocumentName && attachedFile?.documentName) {
+        // ====== CHAT-WITH-FILE MODE ======
+        // Query ONLY the attached temp document via the separate chat-query API
+        const response = await fetch('/api/search/chat-query', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            query,
+            sessionId,
+            documentName: chatDocumentName,
+          }),
+        });
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            await AuthService.logout();
+            return;
+          }
+          throw new Error(`Chat query failed (${response.status})`);
         }
 
-        // Always use semantic search with AI generation by default
-        const needsGeneration = true; // Always generate AI response
-        
-        // Build query parameters for the new search API - always use semantic search
+        data = await response.json();
+
+        // Map chat results
+        if (data.generatedResponse) {
+          setGeneratedResponse(data.generatedResponse);
+          setGenerationType(data.generationType || 'chat-with-file');
+          setSources(data.sources || []);
+          setNoRelevantDocuments(data.noRelevantDocuments || false);
+          setRelevantDocumentUrl(undefined);
+        } else {
+          setGeneratedResponse(null);
+          setSources([]);
+          setNoRelevantDocuments(data.noRelevantDocuments || false);
+        }
+        setSearchResults({ documents: [] }); // No document cards in chat mode
+      } else {
+        // ====== GLOBAL SEARCH MODE ======
+        // Same as before — queries the main Colivara collection
         const queryParams = new URLSearchParams();
-        queryParams.append('query', searchQuery);
-        queryParams.append('useSemantic', 'true'); // Always use semantic search
-        queryParams.append('generate', needsGeneration.toString()); // Always generate AI response
-        queryParams.append('generationType', 'text-only'); // Default to text-only generation for documents
-        
-        // Search for documents using the new enhanced search API
+        queryParams.append('query', query);
+        queryParams.append('useSemantic', 'true');
+        queryParams.append('generate', 'true');
+        queryParams.append('generationType', 'text-only');
+
         const response = await fetch(`/api/search?${queryParams.toString()}`, {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
-          }
+          },
         });
 
         if (!response.ok) {
-          // Handle different status codes appropriately
           if (response.status === 500) {
-            console.error('Search API internal server error:', response.status, response.statusText);
-            // Set empty results and show user-friendly message
+            console.error('Search API internal server error:', response.status);
             setSearchResults({ documents: [] });
             return;
           } else if (response.status === 401) {
-            console.error('Authentication error during search:', response.status);
             await AuthService.logout();
             return;
           } else if (response.status === 403) {
-            console.error('Forbidden access during search:', response.status);
             setSearchResults({ documents: [] });
             return;
           } else {
-            throw new Error(`Failed to fetch documents: ${response.status} ${response.statusText}`);
+            throw new Error(`Failed to fetch documents: ${response.status}`);
           }
         }
 
-        const data = await response.json();
-        
-        // Extract documents from the enhanced search results
-        // Handle both direct document results and enhanced search results with additional metadata
-        const documents = data.results.map((result: any) => {
-          // If result has a document property, use it; otherwise use the result itself
-          return result.document || result;
-        });
-        
-        // Handle generated response if present
+        data = await response.json();
+
+        const documents = data.results.map((result: any) => result.document || result);
+
         if (data.generatedResponse) {
           setGeneratedResponse(data.generatedResponse);
-          setGenerationType(data.generationType || 'semantic'); // Default to semantic
-          setSources(data.sources || []); // Set the sources used in the AI response
-          setRelevantDocumentUrl(data.relevantDocumentUrl || undefined); // Set the relevant document URL
-          setNoRelevantDocuments(data.noRelevantDocuments || false); // Set the no relevant documents flag
+          setGenerationType(data.generationType || 'semantic');
+          setSources(data.sources || []);
+          setRelevantDocumentUrl(data.relevantDocumentUrl || undefined);
+          setNoRelevantDocuments(data.noRelevantDocuments || false);
         } else {
           setGeneratedResponse(null);
-          setSources([]); // Clear sources when there's no generated response
-          setRelevantDocumentUrl(undefined); // Clear the document URL as well
-          setNoRelevantDocuments(false); // Clear the flag
+          setSources([]);
+          setRelevantDocumentUrl(undefined);
+          setNoRelevantDocuments(false);
         }
-        
-        setSearchResults({
-          documents: documents || [],
-        });
-      } catch (error) {
-        console.error('Search error:', error);
-        setSearchResults({ documents: [] });
-        setGeneratedResponse(null);
-        setSources([]); // Clear sources on error as well
-        setRelevantDocumentUrl(undefined); // Clear document URL on error as well
-        setNoRelevantDocuments(false); // Clear the flag on error
-      } finally {
-        setLoading(false);
-        setIsGenerating(false);
+
+        setSearchResults({ documents: documents || [] });
       }
-    } else {
+    } catch (error) {
+      console.error('Search error:', error);
       setSearchResults({ documents: [] });
       setGeneratedResponse(null);
-      setHasPerformedSearch(false);
-      setSources([]); // Clear sources when there's no search query
-      setRelevantDocumentUrl(undefined); // Clear document URL when there's no search query
-      setNoRelevantDocuments(false); // Clear the flag when there's no search query
+      setSources([]);
+      setRelevantDocumentUrl(undefined);
+      setNoRelevantDocuments(false);
+    } finally {
+      setLoading(false);
+      setIsGenerating(false);
     }
-  };
+  }, [chatDocumentName, attachedFile, sessionId]);
+
+  // Suggestion pills
+  const suggestions = attachedFile?.documentName
+    ? [
+        'Summarize the main points',
+        'Extract key data and statistics',
+        'Generate a quiz from this document',
+      ]
+    : [
+        'Summarize the latest institutional memo',
+        'Find forms for faculty leave',
+        'What are the strategic goals of LSPU?',
+      ];
 
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
-          <div className="w-16 h-16 flex items-center justify-center mx-auto mb-4 overflow-hidden">
+          <div className="w-16 h-16 flex items-center justify-center mx-auto mb-4 overflow-hidden rounded-full bg-white shadow-sm border border-gray-100">
             <Image
               src="/LSPULogo.png"
               alt="LSPU Logo"
@@ -161,47 +291,53 @@ export default function SearchPage() {
     return null;
   }
 
-  const totalResults = searchResults.documents.length
-
-  const popularSearches = ["Research", "Curriculum", "Policy", "Extension", "Teaching"]
+  const isFileMode = !!attachedFile?.documentName;
 
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
-       <div className="mb-8 animate-fade-in text-center">
-         <h1 className="text-3xl md:text-4xl font-bold text-foreground mb-2">AI-Powered Search</h1>
-         <p className="text-muted-foreground">Find documents and resources across the system</p>
-       </div>
+        {/* Header — dynamically changes when a file is attached */}
+        <div className="mb-8 animate-fade-in text-center">
+          <h1 className="text-3xl md:text-4xl font-bold text-foreground mb-2">AI-Powered Search</h1>
+          <p className="text-muted-foreground">
+            {isFileMode
+              ? 'Ask questions based on your attached file'
+              : 'Find documents and resources across the system'}
+          </p>
+        </div>
 
-        {/* Search Bar */}
-        <Card className="mb-8 animate-fade-in">
-          <CardContent className="pt-6">
-            <div className="relative mb-4">
-              <SearchIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5" style={{ color: 'gray' }} />
-              <Input
-                placeholder="Ask or search about institutional documents and files (English/Filipino)"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    performSearch();
-                  }
-                }}
-                className="pl-12 h-14 text-lg"
-              />
-              <Button
-                onClick={performSearch}
-                className="absolute right-2 top-1/2 -translate-y-1/2 h-10 w-10 p-0 opacity-0"
-                aria-label="Search"
-              >
-                S
-              </Button>
+        {/* Enhanced Search Bar with Chat-with-File support */}
+        <div className="mb-8 animate-fade-in max-w-4xl mx-auto">
+          <ChatSearchInput
+            query={searchQuery}
+            onQueryChange={setSearchQuery}
+            onSubmit={performSearch}
+            onFileAttach={handleFileAttach}
+            onFileRemove={handleFileRemove}
+            attachedFile={attachedFile}
+            isLoading={loading || isGenerating}
+          />
+
+          {/* Suggestion pills — shown when no search has been done yet */}
+          {!hasPerformedSearch && (
+            <div className="mt-4 flex flex-wrap items-center gap-2 justify-center">
+              <span className="text-sm text-muted-foreground">Try asking:</span>
+              {suggestions.map((suggestion, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => {
+                    setSearchQuery(suggestion);
+                    performSearch(suggestion);
+                  }}
+                  className="inline-flex items-center rounded-full border border-border bg-card px-3.5 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+                >
+                  {suggestion}
+                </button>
+              ))}
             </div>
-            {/* Advanced search indicator - shows that we're using the most advanced search by default */}
-          </CardContent>
-        </Card>
+          )}
+        </div>
 
         {/* Search Results */}
         {searchQuery && hasPerformedSearch && (
@@ -211,10 +347,12 @@ export default function SearchPage() {
                 {loading ? 'Searching...' : (
                   generatedResponse && sources && sources.length > 0 
                     ? `Answer generated from ${sources.length} source ${sources.length === 1 ? 'document' : 'documents'}`
-                    : `${searchResults.documents.length} ${searchResults.documents.length === 1 ? "result" : "results"} found for "${searchQuery}"`
+                    : isFileMode && generatedResponse
+                      ? 'Answer from your attached file'
+                      : `${searchResults.documents.length} ${searchResults.documents.length === 1 ? "result" : "results"} found for "${searchQuery}"`
                 )}
               </h2>
-              {generatedResponse && sources && sources.length > 0 && (
+              {generatedResponse && sources && sources.length > 0 && !isFileMode && (
                 <p className="text-sm text-muted-foreground mt-1">
                   Query: &quot;{searchQuery}&quot;
                 </p>
@@ -225,14 +363,14 @@ export default function SearchPage() {
             <QwenResponseDisplay
               generatedResponse={generatedResponse || ''}
               generationType={generationType}
-              sources={sources} // Pass the sources used in the AI response
-              relevantDocumentUrl={relevantDocumentUrl} // Pass the relevant document URL
-              isLoading={isGenerating} // Always show loading when generating since we're always using semantic search
-              noRelevantDocuments={noRelevantDocuments} // Pass the flag for no relevant documents
+              sources={isFileMode ? [] : sources}
+              relevantDocumentUrl={relevantDocumentUrl}
+              isLoading={isGenerating}
+              noRelevantDocuments={noRelevantDocuments}
             />
 
             {/* Only show the documents tab if we're not generating and don't have a generated response */}
-            {!generatedResponse && !isGenerating ? (
+            {!generatedResponse && !isGenerating && !isFileMode ? (
               searchResults.documents.length > 0 && (
                 <Tabs defaultValue="documents" className="w-full">
                   <TabsList className="mb-6">
@@ -246,36 +384,29 @@ export default function SearchPage() {
                       </div>
                     ) : (
                       searchResults.documents.map((doc, index) => {
-                        // Check if this document is from enhanced search (has additional properties)
                         const enhancedResult = Array.isArray(searchResults.documents) && searchResults.documents.length > 0 && 'documentId' in searchResults.documents[0];
                         const enhancedDoc = enhancedResult ? (searchResults as any).documents[index] : null;
                         
-                        // Helper function to get the correct navigation URL
                         const getDocumentUrl = () => {
                           const resultWithUrl = doc as any;
-                          // Check for QPRO document first - redirect to analysis page
                           if (resultWithUrl.isQproDocument && resultWithUrl.qproAnalysisId) {
                             return `/qpro/analysis/${resultWithUrl.qproAnalysisId}`;
                           }
                           if (enhancedDoc?.isQproDocument && enhancedDoc?.qproAnalysisId) {
                             return `/qpro/analysis/${enhancedDoc.qproAnalysisId}`;
                           }
-                          // Check for direct documentUrl
                           if (resultWithUrl.documentUrl && resultWithUrl.documentUrl !== `/repository/preview/undefined` && !resultWithUrl.documentUrl.includes('/repository/preview/undefined')) {
                             return resultWithUrl.documentUrl;
                           }
                           if (enhancedDoc?.documentUrl && enhancedDoc.documentUrl !== `/repository/preview/undefined` && !enhancedDoc.documentUrl.includes('/repository/preview/undefined')) {
                             return enhancedDoc.documentUrl;
                           }
-                          // Check for originalDocumentId
                           if (enhancedDoc?.originalDocumentId) {
                             return `/repository/preview/${enhancedDoc.originalDocumentId}`;
                           }
-                          // Check for colivaraDocumentId
                           if (doc.colivaraDocumentId) {
                             return `/repository/preview/${doc.colivaraDocumentId}`;
                           }
-                          // Fallback to document ID
                           return `/repository/preview/${doc.id}`;
                         };
                         
@@ -299,22 +430,20 @@ export default function SearchPage() {
                                   <div className="flex items-start justify-between gap-2">
                                     <div className="flex items-center gap-2">
                                       <CardTitle className="text-lg">{cleanDocumentTitle(SuperMapper.getFieldValue(doc, 'title') || (doc as any).title || ((doc as any).document && SuperMapper.getFieldValue((doc as any).document, 'title')) || (doc as any).originalName || "Untitled Document")}</CardTitle>
-                                      {/* Show QPRO badge if it's a QPRO document */}
                                       {((doc as any).isQproDocument || enhancedDoc?.isQproDocument) && (
                                         <Badge variant="default" className="bg-blue-600 hover:bg-blue-700">QPRO</Badge>
                                       )}
                                     </div>
-                                    <Badge variant="secondary">{SuperMapper.getFieldValue(doc, 'category') || (doc as any).category || (doc as any).type || "Uncategorized"}</Badge>
+                                    <Badge variant="secondary">{SuperMapper.getFieldValue(doc, 'category') || (doc as any).category || (doc as any).type || "Other files"}</Badge>
                                   </div>
                                   
-                                  {/* Evidence Section - Show extracted text/snippet from the document */}
+                                  {/* Evidence Section */}
                                   <div className="mt-3 p-3 bg-muted/50 rounded-lg border-l-4 border-primary/30">
                                     <div className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1">
                                       <TrendingUp className="w-3 h-3" />
-                                      💬 Evidence from document:
+                                      Evidence from document:
                                     </div>
                                     {(() => {
-                                      // Prefer evidence from API response if present
                                       const evidenceFromApi = (typeof window !== 'undefined' && window.__SEARCH_EVIDENCE__) ? window.__SEARCH_EVIDENCE__ : undefined;
                                       const evidence = evidenceFromApi || enhancedDoc?.evidence || (doc as any).evidence || enhancedDoc?.snippet || (doc as any).snippet || enhancedDoc?.extractedText || (doc as any).extractedText || (doc as any).content || doc.description || (doc as any).document?.description;
                                       const isMeaningfulText = evidence && 
@@ -341,7 +470,7 @@ export default function SearchPage() {
                                         }
                                         return (
                                           <CardDescription className="mt-1 text-sm text-muted-foreground">
-                                            📄 Document matched your search query. Click to view full content.
+                                            Document matched your search query. Click to view full content.
                                           </CardDescription>
                                         );
                                       }
@@ -355,7 +484,6 @@ export default function SearchPage() {
                                       </Badge>
                                     ))}
                                   </div>
-                                  {/* Show relevance score and page info */}
                                   <div className="mt-2 flex items-center gap-3">
                                     {(enhancedDoc?.confidenceScore || (doc as any).confidenceScore || (doc as any).score) ? (
                                       <div className="inline-flex items-center gap-1 bg-primary/10 px-2 py-1 rounded-md">
@@ -368,10 +496,9 @@ export default function SearchPage() {
                                       <span className="text-xs text-muted-foreground">Pages: {(enhancedDoc?.pageNumbers || (doc as any).pageNumbers).join(', ')}</span>
                                     )}
                                   </div>
-                                  {/* Preview link */}
                                   <div className="mt-3 flex justify-end">
                                     <Button variant="outline" size="sm" onClick={(e) => {
-                                      e.stopPropagation(); // Prevent card click from triggering
+                                      e.stopPropagation();
                                       router.push(getDocumentUrl());
                                     }}>
                                       <Eye className="w-4 h-4 mr-1" />
@@ -390,12 +517,16 @@ export default function SearchPage() {
               )
             ) : null}
 
-            {!loading && searchResults.documents.length === 0 && (
+            {!loading && searchResults.documents.length === 0 && !generatedResponse && !isGenerating && (
               <Card>
                 <CardContent className="py-12 text-center">
                   <SearchIcon className="w-12 h-12 mx-auto mb-4" style={{ color: 'gray' }} />
                   <h3 className="text-lg font-semibold mb-2">No results found</h3>
-                  <p className="text-muted-foreground">Try different keywords or browse the repository</p>
+                  <p className="text-muted-foreground">
+                    {isFileMode
+                      ? 'Try rephrasing your question about the attached document'
+                      : 'Try different keywords or browse the repository'}
+                  </p>
                 </CardContent>
               </Card>
             )}
@@ -411,3 +542,4 @@ export default function SearchPage() {
     </div>
   )
 }
+

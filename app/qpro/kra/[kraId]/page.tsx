@@ -378,7 +378,13 @@ export default function KRADetailPage() {
   // Because the quarterly targets may not perfectly sum to the annual (due to rounding),
   // we ALWAYS use the strategic plan annual value as the source of truth.
   // The DB quarterly targets are only used for progress tracking, not display.
-  const getAnnualTargetValue = useCallback((initiativeId: string, year: number, strategicPlanAnnualTarget: number | string): number => {
+  const getAnnualTargetValue = useCallback((initiativeId: string, year: number, strategicPlanAnnualTarget: number | string, targetType?: string): number => {
+    // For MILESTONE and TEXT_CONDITION, the target is always 1 (complete the milestone)
+    const mappedType = targetType ? mapTargetType(targetType) : undefined;
+    if (mappedType === 'MILESTONE' || mappedType === 'TEXT_CONDITION') {
+      return 1;
+    }
+    
     // Always use strategic plan annual value as the source of truth
     const annualValue = typeof strategicPlanAnnualTarget === 'number' 
       ? strategicPlanAnnualTarget 
@@ -685,9 +691,10 @@ export default function KRADetailPage() {
               // For cumulative KPIs with only 2029 target, use that target for ALL years
               let timelineItem = initiative.targets?.timeline_data?.find(t => t.year === selectedProgressYear);
               
-              // If no exact match and this is a cumulative target, find the nearest target (fallback logic)
-              if (!timelineItem && initiative.targets?.target_time_scope === 'cumulative') {
-                // Use getTargetValueForYear which has proper fallback logic
+              // If no exact match, find the nearest target (fallback logic)
+              // Works for cumulative targets AND non-cumulative KPIs with sparse timeline data
+              // (e.g., milestone KPIs that only have a 2028 or 2029 target)
+              if (!timelineItem && initiative.targets?.timeline_data?.length > 0) {
                 const fallbackValue = getTargetValueForYear(initiative.targets?.timeline_data, selectedProgressYear);
                 if (fallbackValue !== null) {
                   // Find the source year (e.g., 2029) to get other metadata
@@ -701,17 +708,61 @@ export default function KRADetailPage() {
                     target_value: fallbackValue,
                     current_value: sourceEntry?.current_value
                   };
+                } else {
+                  // For milestone/text_condition with non-numeric target values, use the first entry
+                  const mappedType = mapTargetType(initiative.targets?.type || 'count');
+                  if (mappedType === 'MILESTONE' || mappedType === 'TEXT_CONDITION') {
+                    const firstEntry = initiative.targets?.timeline_data?.[0];
+                    if (firstEntry) {
+                      timelineItem = {
+                        year: selectedProgressYear,
+                        target_value: firstEntry.target_value,
+                        current_value: firstEntry.current_value
+                      };
+                    }
+                  }
                 }
               }
               
               // Calculate annual progress
               const yearItems = initiativeProgress?.progress?.filter(p => p.year === selectedProgressYear) || [];
-              const yearTotal = yearItems.reduce((sum, item) => {
-                const val = typeof item.currentValue === 'number' ? item.currentValue : parseFloat(String(item.currentValue)) || 0;
-                return sum + val;
-              }, 0);
+              const dynamicType = mapTargetType(initiative.targets?.type || 'count');
               
-              const targetNum = timelineItem ? parseNumericValue(timelineItem.target_value) : 0;
+              // For MILESTONE and TEXT_CONDITION, use special aggregation (max, not sum)
+              let yearTotal: number;
+              if (dynamicType === 'MILESTONE') {
+                // MILESTONE: 1 if any quarter is achieved, 0 otherwise
+                yearTotal = yearItems.some(item => item.currentValue === 1 || item.currentValue === '1') ? 1 : 0;
+              } else if (dynamicType === 'TEXT_CONDITION') {
+                // TEXT_CONDITION: Convert text to numeric and take the max
+                // Met = 1, In Progress = 0.5, Not Met / other = 0
+                // Also handle numeric values (1, 0.5, 0) from cumulative path
+                yearTotal = yearItems.reduce((max, item) => {
+                  let val = 0;
+                  const cv = String(item.currentValue);
+                  if (cv === 'Met') val = 1;
+                  else if (cv === 'In Progress') val = 0.5;
+                  else if (cv === 'Not Met') val = 0;
+                  else {
+                    // Fallback: handle numeric values from API
+                    const numVal = typeof item.currentValue === 'number'
+                      ? item.currentValue
+                      : parseFloat(cv);
+                    if (!isNaN(numVal) && numVal > 0) val = numVal;
+                  }
+                  return Math.max(max, val);
+                }, 0);
+              } else {
+                yearTotal = yearItems.reduce((sum, item) => {
+                  const val = typeof item.currentValue === 'number' ? item.currentValue : parseFloat(String(item.currentValue)) || 0;
+                  return sum + val;
+                }, 0);
+              }
+              
+              // For MILESTONE and TEXT_CONDITION, target is always 1 ("complete the milestone")
+              const targetNum = (dynamicType === 'MILESTONE' || dynamicType === 'TEXT_CONDITION')
+                ? 1
+                : (timelineItem ? parseNumericValue(timelineItem.target_value) : 0);
               const yearPct = targetNum > 0 ? Math.min(100, Math.round((yearTotal / targetNum) * 100)) : 0;
 
               return (
@@ -725,13 +776,17 @@ export default function KRADetailPage() {
                           <div className="bg-blue-50/50 p-3 rounded-md border border-blue-100">
                             <p className="text-sm text-gray-800">
                               <span className="font-bold text-blue-800 uppercase text-xs tracking-wide block mb-1">Output</span>
-                              {initiative.key_performance_indicator?.outputs}
+                              {Array.isArray(initiative.key_performance_indicator?.outputs)
+                                ? (initiative.key_performance_indicator.outputs as unknown as string[]).join('; ')
+                                : initiative.key_performance_indicator?.outputs}
                             </p>
                           </div>
                           <div className="bg-green-50/50 p-3 rounded-md border border-green-100">
                             <p className="text-sm text-gray-800">
                               <span className="font-bold text-green-800 uppercase text-xs tracking-wide block mb-1">Outcome</span>
-                              {initiative.key_performance_indicator?.outcomes}
+                              {Array.isArray(initiative.key_performance_indicator?.outcomes)
+                                ? (initiative.key_performance_indicator.outcomes as unknown as string[]).join('; ')
+                                : initiative.key_performance_indicator?.outcomes}
                             </p>
                           </div>
                         </div>
@@ -853,14 +908,24 @@ export default function KRADetailPage() {
                               })()}
                             </div>
                             <div className="flex items-baseline gap-2 mt-1">
-                              <span className="text-3xl font-bold text-gray-900">{yearTotal}</span>
-                              <span className="text-gray-500">/</span>
+                              <span className={`text-3xl font-bold ${
+                                dynamicType === 'TEXT_CONDITION'
+                                  ? yearTotal >= 1 ? 'text-green-600' : yearTotal >= 0.5 ? 'text-yellow-600' : 'text-gray-400'
+                                  : 'text-gray-900'
+                              }`}>{
+                                dynamicType === 'TEXT_CONDITION'
+                                  ? (yearTotal >= 1 ? 'Met' : yearTotal >= 0.5 ? 'In Progress' : 'Not Met')
+                                  : dynamicType === 'MILESTONE'
+                                    ? (yearTotal >= 1 ? 1 : 0)
+                                    : yearTotal
+                              }</span>
+                              {dynamicType !== 'TEXT_CONDITION' && <span className="text-gray-500">/</span>}
                               
                               {/* Editable Target - uses annual target value (sum of quarterly targets or strategic plan fallback) */}
-                              {(() => {
+                              {dynamicType !== 'TEXT_CONDITION' && (() => {
                                 // For annual overview, we display the sum of all quarterly targets
                                 // but editing is done per-quarter (Q4 for COUNT < 4)
-                                const annualTargetValue = getAnnualTargetValue(initiative.id, timelineItem.year, timelineItem.target_value);
+                                const annualTargetValue = getAnnualTargetValue(initiative.id, timelineItem.year, timelineItem.target_value, initiative.targets?.type);
                                 const canEditTarget = user && (user.role === 'ADMIN' || user.role === 'FACULTY');
                                 
                                 // For editing, we'll target Q4 since that's where the annual target lives for COUNT < 4
@@ -900,7 +965,7 @@ export default function KRADetailPage() {
                                 );
                               })()}
                               
-                              <span className="text-sm text-gray-500 ml-1">{initiative.targets.unit_basis}</span>
+                              {dynamicType !== 'TEXT_CONDITION' && <span className="text-sm text-gray-500 ml-1">{initiative.targets.unit_basis}</span>}
                             </div>
                           </div>
                         </div>

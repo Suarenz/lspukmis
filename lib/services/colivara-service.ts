@@ -83,11 +83,30 @@ class ColivaraProcessingError extends ColivaraError {
   }
 }
 
+/**
+ * Module-level cache for temporarily storing uploaded image base64 content.
+ * Used as a reliable fallback when Colivara search doesn't return img_base64 for image files.
+ * Entries auto-expire after 24 hours (matching temp document TTL).
+ */
+const tempImageCache = new Map<string, { base64: string; mimeType: string; timestamp: number }>();
+
+/** Clean up expired entries from the image cache (older than 24 hours) */
+function cleanTempImageCache() {
+  const now = Date.now();
+  const TTL = 24 * 60 * 60 * 1000; // 24h
+  for (const [key, entry] of tempImageCache) {
+    if (now - entry.timestamp > TTL) {
+      tempImageCache.delete(key);
+    }
+  }
+}
+
 class ColivaraService {
   private client: ColiVara;
   private config: ColivaraConfig;
   private isInitialized: boolean;
   private defaultCollection: string = 'lspu-kmis-documents';
+  private tempCollection: string = 'lspu-kmis-chat-temp';
 
   constructor(config?: Partial<ColivaraConfig>) {
     this.config = this.mergeConfig(config);
@@ -1061,6 +1080,384 @@ class ColivaraService {
       console.error('Enhanced search failed:', error);
       // Fallback to standard search
       return await this.performSemanticSearch(query, filters, userId);
+    }
+  }
+
+  // ========================
+  // Chat-with-File (Temporary Collection) Methods
+  // These methods operate on a SEPARATE Colivara collection for ephemeral chat attachments.
+  // They NEVER touch the main 'lspu-kmis-documents' collection.
+  // ========================
+
+  /**
+   * Ensure the temporary chat collection exists in Colivara.
+   */
+  private async ensureTempCollection(): Promise<void> {
+    try {
+      if (typeof this.client.getCollection !== 'function') {
+        throw new ColivaraApiError('Colivara client does not have a getCollection method');
+      }
+      try {
+        await this.client.getCollection({ collection_name: this.tempCollection });
+      } catch {
+        console.log(`Creating temporary chat collection '${this.tempCollection}'`);
+        if (typeof this.client.createCollection !== 'function') {
+          throw new ColivaraApiError('Colivara client does not have a createCollection method');
+        }
+        await this.client.createCollection({
+          name: this.tempCollection,
+          metadata: {
+            description: 'Temporary collection for chat-with-file attachments',
+            created_at: new Date().toISOString(),
+            type: 'temporary_chat',
+          },
+        });
+        console.log(`Temporary chat collection '${this.tempCollection}' created successfully`);
+      }
+    } catch (error) {
+      console.error('Failed to ensure temp collection exists:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Upload a temporary file for chat-with-file. Uses a session-specific document name
+   * in the separate temp collection so it never pollutes the main index.
+   * @returns The Colivara document name used for the upload.
+   */
+  async uploadTempChatDocument(
+    sessionId: string,
+    fileName: string,
+    base64Content: string,
+  ): Promise<string> {
+    try {
+      if (!this.isInitialized) {
+        await this.initialize();
+      }
+      await this.ensureTempCollection();
+
+      const documentName = `chat_${sessionId}_${fileName}`;
+
+      if (typeof this.client.upsertDocument !== 'function') {
+        throw new ColivaraApiError('Colivara client does not have an upsertDocument method');
+      }
+
+      console.log(`[Colivara Chat] Uploading temp document: ${documentName} to collection ${this.tempCollection}`);
+
+      // Cache image base64 content for reliable fallback during search
+      const isImageFile = fileName.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+      if (isImageFile) {
+        const ext = fileName.split('.').pop()?.toLowerCase() || 'jpeg';
+        const mimeMap: Record<string, string> = {
+          jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
+          gif: 'image/gif', webp: 'image/webp',
+        };
+        tempImageCache.set(documentName, {
+          base64: base64Content,
+          mimeType: mimeMap[ext] || 'image/jpeg',
+          timestamp: Date.now(),
+        });
+        cleanTempImageCache(); // Prune old entries
+        console.log(`[Colivara Chat] Cached image base64 for fallback (${base64Content.length} chars): ${documentName}`);
+      }
+
+      await this.client.upsertDocument({
+        name: documentName,
+        collection_name: this.tempCollection,
+        document_base64: base64Content,
+        metadata: {
+          status: 'temporary_chat',
+          session_id: sessionId,
+          fileName,
+          uploaded_at: new Date().toISOString(),
+          expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        },
+        wait: true, // Wait for processing so the document is immediately searchable
+      });
+
+      console.log(`[Colivara Chat] Temp document uploaded successfully: ${documentName}`);
+      return documentName;
+    } catch (error) {
+      console.error(`[Colivara Chat] Failed to upload temp document for session ${sessionId}:`, error);
+      throw new ColivaraProcessingError(
+        `Failed to upload temp chat document: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        sessionId,
+      );
+    }
+  }
+
+  /**
+   * Search ONLY within the temporary chat collection for a specific session's document.
+   * This never touches the main collection.
+   */
+  async searchTempChatDocument(
+    query: string,
+    sessionId: string,
+    documentName: string,
+  ): Promise<SearchResults> {
+    try {
+      if (!this.isInitialized) {
+        await this.initialize();
+      }
+
+      const startTime = Date.now();
+
+      if (typeof this.client.search !== 'function') {
+        console.warn('Colivara client does not have a search method');
+        return { results: [], total: 0, query, processingTime: 0 };
+      }
+
+      const response = await this.client.search({
+        query,
+        collection_name: this.tempCollection,
+        top_k: 10,
+      });
+
+      const processingTime = Date.now() - startTime;
+
+      // Filter results to only include the document from this session
+      let sessionResults = response.results.filter((item: any) => {
+        const docName =
+          item.document?.document_name ||
+          item.document_name ||
+          item.name ||
+          '';
+        return docName === documentName || docName.startsWith(`chat_${sessionId}_`);
+      });
+
+      // Special handling for image files: If we have a result but no visual content, 
+      // attempt to fetch the original document to include the image
+      const isImageFile = documentName.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+      
+      // Log what Colivara actually returned for debugging
+      if (sessionResults.length > 0) {
+        console.log(`[Colivara Chat] Search returned ${sessionResults.length} results. First result fields:`, {
+          has_img_base64: !!sessionResults[0].img_base64,
+          img_base64_length: sessionResults[0].img_base64?.length || 0,
+          document_name: sessionResults[0].document_name,
+          page_number: sessionResults[0].page_number,
+          normalized_score: sessionResults[0].normalized_score,
+        });
+      }
+
+      // Check if any result actually has non-empty visual content
+      const hasVisualResults = sessionResults.some((r: any) => {
+        const img = r.img_base64 || r.image || r.base64_image;
+        return img && typeof img === 'string' && img.length > 100; // Must be non-trivial
+      });
+      
+      // If we're searching an image but got no results with image data,
+      // we should try multiple fallback strategies to get the image for Qwen to "see"
+      if (isImageFile && !hasVisualResults) {
+        let imageBase64: string | null = null;
+        
+        // Fallback 1: Try getDocument with expand: "pages" to get page images
+        try {
+            console.log(`[Colivara Chat] Image file detected with no visual search results. Trying getDocument with expand=pages: ${documentName}`);
+            const docResponse = await this.client.getDocument({
+                document_name: documentName,
+                collection_name: this.tempCollection,
+                expand: "pages",
+            });
+            
+            // Extract image from pages array (PageOut has img_base64)
+            if (docResponse?.pages && Array.isArray(docResponse.pages) && docResponse.pages.length > 0) {
+                const pageImg = docResponse.pages[0].img_base64;
+                if (pageImg && pageImg.length > 100) {
+                    imageBase64 = pageImg;
+                    console.log(`[Colivara Chat] Got image from getDocument pages (${pageImg.length} chars)`);
+                }
+            }
+        } catch (fetchError) {
+            console.warn(`[Colivara Chat] getDocument with pages failed:`, fetchError);
+        }
+        
+        // Fallback 2: Use the module-level cache from upload time
+        if (!imageBase64) {
+            const cached = tempImageCache.get(documentName);
+            if (cached) {
+                imageBase64 = cached.base64;
+                console.log(`[Colivara Chat] Using cached upload base64 (${cached.base64.length} chars, type: ${cached.mimeType})`);
+            }
+        }
+        
+        // If we got an image through any fallback, inject it as a synthetic result
+        if (imageBase64) {
+            if (sessionResults.length > 0) {
+                // Augment existing result with image data
+                sessionResults[0].img_base64 = imageBase64;
+                console.log(`[Colivara Chat] Augmented existing search result with image data`);
+            } else {
+                // Create a synthetic result with the image
+                sessionResults.push({
+                    document_name: documentName,
+                    normalized_score: 1.0,
+                    raw_score: 1.0,
+                    score: 1.0,
+                    content: "Image file content",
+                    metadata: { fileName: documentName },
+                    img_base64: imageBase64,
+                    page_number: 1,
+                    collection_name: this.tempCollection,
+                    collection_id: 0,
+                    document_id: 0,
+                } as any);
+                console.log(`[Colivara Chat] Created synthetic result with image data (${imageBase64.length} chars)`);
+            }
+        } else {
+            console.warn(`[Colivara Chat] All fallback strategies failed for image file: ${documentName}`);
+        }
+      }
+
+      // For non-image files (PDFs, DOCX): If search returned results but WITHOUT img_base64,
+      // try to fetch page images via getDocument with expand=pages
+      if (!isImageFile && sessionResults.length > 0 && !hasVisualResults) {
+        try {
+          console.log(`[Colivara Chat] Non-image file has results but no page images. Trying getDocument with expand=pages: ${documentName}`);
+          const docResponse = await this.client.getDocument({
+            document_name: documentName,
+            collection_name: this.tempCollection,
+            expand: "pages",
+          });
+          
+          if (docResponse?.pages && Array.isArray(docResponse.pages)) {
+            // Match page images to existing results by page_number
+            for (const result of sessionResults) {
+              const pageNum = result.page_number || 1;
+              const matchingPage = docResponse.pages.find((p: any) => p.page_number === pageNum);
+              if (matchingPage?.img_base64 && matchingPage.img_base64.length > 100) {
+                result.img_base64 = matchingPage.img_base64;
+              }
+            }
+            // If no results matched, add all pages as visual content to the first result
+            if (!sessionResults.some((r: any) => r.img_base64 && r.img_base64.length > 100)) {
+              const firstPageWithImage = docResponse.pages.find((p: any) => p.img_base64 && p.img_base64.length > 100);
+              if (firstPageWithImage && sessionResults.length > 0) {
+                sessionResults[0].img_base64 = firstPageWithImage.img_base64;
+                console.log(`[Colivara Chat] Augmented first result with page image from getDocument`);
+              }
+            }
+          }
+        } catch (fetchError) {
+          console.warn(`[Colivara Chat] getDocument fallback failed for non-image file:`, fetchError);
+        }
+      }
+
+      const results: SearchResult[] = sessionResults.map((item: any) => {
+        const score =
+          item.normalized_score || item.raw_score || item.score || item.similarity || 0;
+        const extractedContent =
+          item.chunk || item.content || item.text || item.page_content ||
+          item.metadata?.content || item.metadata?.text ||
+          item.document?.content || item.document?.text || '';
+        const pageImage = item.img_base64 || item.image || item.image_data || item.base64_image;
+
+        return {
+          documentId: `chat_${sessionId}`,
+          title: item.metadata?.fileName || documentName,
+          content: extractedContent || (pageImage ? 'Visual content available - text will be extracted by AI' : ''),
+          score,
+          pageNumbers: [item.page_number].filter(Boolean),
+          documentSection: item.section || '',
+          confidenceScore: score,
+          snippet: extractedContent
+            ? extractedContent.substring(0, 300)
+            : pageImage
+              ? 'Visual content - AI will extract text from page image'
+              : '',
+          document: {} as Document,
+          visualContent: pageImage,
+          extractedText: extractedContent,
+        };
+      });
+
+      return { results, total: results.length, query, processingTime };
+    } catch (error) {
+      console.error(`[Colivara Chat] Search failed for session ${sessionId}:`, error);
+      return { results: [], total: 0, query, processingTime: 0 };
+    }
+  }
+
+  /**
+   * Delete a specific temp chat document from the temp collection.
+   */
+  async deleteTempChatDocument(documentName: string): Promise<boolean> {
+    try {
+      if (!this.isInitialized) {
+        await this.initialize();
+      }
+
+      if (typeof this.client.deleteDocument !== 'function') {
+        console.warn('Colivara client does not have a deleteDocument method');
+        return false;
+      }
+
+      await this.client.deleteDocument({
+        document_name: documentName,
+        collection_name: this.tempCollection,
+      });
+
+      // Also remove from the image cache
+      tempImageCache.delete(documentName);
+
+      console.log(`[Colivara Chat] Deleted temp document: ${documentName}`);
+      return true;
+    } catch (error) {
+      console.error(`[Colivara Chat] Failed to delete temp document ${documentName}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Cleanup expired temporary chat documents (older than 24 hours).
+   * This is a maintenance method that should be called periodically.
+   */
+  async cleanupExpiredTempDocuments(): Promise<number> {
+    try {
+      if (!this.isInitialized) {
+        await this.initialize();
+      }
+
+      // List all documents in the temp collection
+      if (typeof (this.client as any).listDocuments !== 'function') {
+        console.warn('[Colivara Chat] Client does not support listDocuments — attempting search-based cleanup');
+        // Fallback: try to delete the entire temp collection and recreate it
+        try {
+          if (typeof this.client.deleteCollection === 'function') {
+            await this.client.deleteCollection({ collection_name: this.tempCollection });
+            console.log('[Colivara Chat] Deleted temp collection for cleanup');
+            await this.ensureTempCollection();
+            return -1; // Indicate full cleanup
+          }
+        } catch (deleteError) {
+          console.error('[Colivara Chat] Failed to delete temp collection:', deleteError);
+        }
+        return 0;
+      }
+
+      const docs = await (this.client as any).listDocuments({
+        collection_name: this.tempCollection,
+      });
+
+      let deletedCount = 0;
+      const now = new Date();
+
+      for (const doc of docs?.documents || docs || []) {
+        const expiresAt = doc.metadata?.expires_at;
+        if (expiresAt && new Date(expiresAt) < now) {
+          const docName = doc.name || doc.document_name;
+          if (docName) {
+            await this.deleteTempChatDocument(docName);
+            deletedCount++;
+          }
+        }
+      }
+
+      console.log(`[Colivara Chat] Cleaned up ${deletedCount} expired temp documents`);
+      return deletedCount;
+    } catch (error) {
+      console.error('[Colivara Chat] Cleanup failed:', error);
+      return 0;
     }
   }
 }
