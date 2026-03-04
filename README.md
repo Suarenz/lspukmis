@@ -1,176 +1,434 @@
-# LSPU Knowledge Management Information System (KMIS)
+<div align="center">
 
-## Overview
+# 🎓 LSPU KMIS
 
-The LSPU Knowledge Management Information System is a web-based platform designed for Laguna State Polytechnic University to manage, share, and access institutional knowledge resources. This system provides a centralized repository for research, policies, teaching materials, and collaboration tools.
+### Knowledge Management Information System
 
-## System Architecture
+*An AI-powered knowledge platform built for Laguna State Polytechnic University*
 
-### Frontend
-- **Framework**: Next.js 15 with App Router
-- **Language**: TypeScript
-- **Styling**: Tailwind CSS with shadcn/ui components
-- **State Management**: React Context API
-- **UI Components**: Lucide React icons, Recharts for data visualization
+[![Next.js](https://img.shields.io/badge/Next.js-16-black?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Prisma](https://img.shields.io/badge/Prisma-6-2D3748?style=for-the-badge&logo=prisma&logoColor=white)](https://www.prisma.io/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
 
-### Authentication
-- Custom authentication service with token-based simulation
-- Role-based access control (Admin, Faculty, Student, External)
-- Session management with loading states
+<br />
 
-## Project Structure
+[Features](#-features) · [Tech Stack](#%EF%B8%8F-tech-stack) · [Getting Started](#-getting-started) · [Architecture](#-architecture) · [API Reference](#-api-reference) · [Contributing](#-contributing)
 
-```
-app/
-├── page.tsx              # Login page
-├── landing/              # Public landing page with marketing content
-├── dashboard/           # User dashboard
-├── repository/           # Document repository
-├── search/              # Search functionality
-├── analytics/           # Analytics dashboard
-├── layout.tsx           # Root layout with AuthProvider
-components/
-├── navbar.tsx           # Navigation bar component
-├── ui/                  # Reusable UI components
-lib/
-├── auth-context.tsx     # Authentication context
-├── services/            # Business logic services
-├── api/                 # API service layer
-├── mock-data.ts         # Mock data for development
-├── types.ts             # TypeScript type definitions
-```
+<br />
 
-## Recent Changes
+</div>
 
-### Problem Identified
-Previously, the login page (`/`) was showing marketing/feature content that should only appear on the dashboard or a separate landing page. This caused confusion as users would see:
-- Centralized Repository features
-- Collaboration Tools information
-- Secure & Compliant messaging
-- Analytics & Insights details
+---
 
-These are the same features described on the actual dashboard, making it unclear what content was available before login.
+## 📋 Overview
 
-### RBAC Role Assignment Issue
-Additionally, there was an issue where default admin users were being assigned the STUDENT role instead of the ADMIN role, which caused access control problems throughout the system. The role-based access control wasn't functioning properly due to incorrect role assignments in the database.
+**LSPU KMIS** is a full-stack university knowledge management platform that centralizes document management, automates Quarterly Physical Report of Operations (QPRO) analysis using AI, and provides semantic search across institutional knowledge — all aligned with **LSPU's Strategic Plan 2025–2029**.
 
-### Solution Implemented
+The system replaces fragmented spreadsheet-based KPI tracking and keyword-only search with an intelligent, role-based platform featuring **AI-powered document analysis**, **vector-based semantic search**, and **automated KRA/KPI aggregation dashboards**.
 
-1. **Simplified Login Page** (`app/page.tsx`)
-   - Removed all marketing/feature content
-   - Now only shows essential login functionality
-   - Maintains demo account information for testing
- 
-2. **Fixed Role Assignment Issue** (`scripts/fix-user-roles.ts`)
-   - Created a script to fix incorrect user roles in the database
-   - Ensured admin users have ADMIN role, faculty users have FACULTY role, etc.
-   - Added proper role verification and assignment for default users
- 
-3. **Enhanced RBAC System** (`lib/utils/rbac.ts`)
-   - Created comprehensive RBAC utilities for role checking
-   - Implemented role hierarchy and permission management
-   - Updated auth middleware to use the new RBAC system
- 
-4. **Routing**
-   - `/` leads to the login page
-   - Authenticated users are automatically redirected to `/dashboard`
+<br />
 
-## System Cleanup (December 2025)
+## ✨ Features
 
-Removed unused files to optimize the codebase:
-- **Removed**: `app/demo/` - Demo pages for testing UI components
-- **Removed**: `app/landing/` - Unused landing page (redundant with login page)
-- **Removed**: `references/synalink.md` - External reference documentation (11K lines)
-- **Removed**: `lib/mock-data.ts` - Mock data not used in production
-- **Removed**: `hooks/use-isomorphic-layout-effect.ts` - Unused hook file
+<table>
+<tr>
+<td width="50%">
 
-All core functionality remains intact and fully operational.
+### 📄 Document Management
+- Upload, version, categorize & tag documents
+- Unit-based organization (colleges/departments)
+- Download & view tracking with audit trail
+- Threaded comments & collaboration
+- Per-document & per-unit permissions
 
-## How to Run
+</td>
+<td width="50%">
+
+### 🔒 Role-Based Access Control
+- 4-tier hierarchy: **Admin → Faculty → Student → External**
+- Granular permissions (READ / WRITE / ADMIN)
+- Unit-scoped access for faculty
+- JWT authentication with auto-refresh
+- Edge-compatible middleware verification
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+### 🤖 AI-Powered Semantic Search
+- **Colivara** vector embeddings for semantic search
+- Hybrid search (semantic + keyword matching)
+- AI response generation via **Qwen** & **Google Gemini**
+- Chat-with-document feature
+- Redis-cached results for performance
+
+</td>
+<td width="50%">
+
+### 📊 QPRO Analysis Engine
+- Router-Extractor architecture using **GPT-4o-mini**
+- Automated KRA classification across 22 Key Result Areas
+- Activity extraction & KPI mapping
+- Prescriptive analysis generation
+- Approval workflow (Draft → Approved / Rejected)
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+### 📈 KPI/KRA Aggregation Dashboard
+- Type-aware aggregation (COUNT, SNAPSHOT, RATE, MILESTONE, PERCENTAGE, FINANCIAL)
+- Contribution tracking with full audit trail
+- Manual override support for administrators
+- Trend analysis & unit comparisons
+- Year-by-year target tracking (2025–2029)
+
+</td>
+<td width="50%">
+
+### 🎯 Strategic Plan Alignment
+- Built around **LSPU Strategic Plan 2025–2029**
+- 5 KRAs, 22+ strategic initiatives, 100+ KPIs
+- Automated mapping of activities to strategic goals
+- Gap analysis & opportunity identification
+- Quarterly progress monitoring
+
+</td>
+</tr>
+</table>
+
+<br />
+
+## 🛠️ Tech Stack
+
+| Layer | Technology |
+|:---|:---|
+| **Framework** | Next.js 16 (App Router) + React 19 |
+| **Language** | TypeScript 5 |
+| **Styling** | Tailwind CSS 4 + shadcn/ui (Radix primitives) |
+| **Database** | PostgreSQL 16 + Prisma 6 ORM |
+| **Caching** | Redis 7 (Upstash) |
+| **AI / LLM** | OpenAI GPT-4o-mini · Google Gemini · Qwen (OpenRouter) |
+| **Vector Search** | Colivara (semantic embeddings) |
+| **LangChain** | @langchain/core + @langchain/openai |
+| **File Storage** | Azure Blob Storage |
+| **Auth** | JWT + bcrypt (custom, edge-compatible) |
+| **Charts** | Recharts |
+| **Forms** | react-hook-form + Zod validation |
+| **PDF/DOCX** | pdf2json · pdfjs-dist · mammoth |
+| **Testing** | Jest + ts-jest |
+| **Deployment** | Docker + Docker Compose (multi-stage build) |
+
+<br />
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+- **Node.js** 20+
+- **PostgreSQL** 16+
+- **Redis** 7+
+- **npm** or **yarn**
+
+### Quick Setup
 
 ```bash
-# Install dependencies
-npm install
+# Clone the repository
+git clone https://github.com/Suarenz/LSPU-KMIS.git
+cd LSPU-KMIS
 
-# Run development server
+# Copy environment variables
+cp .env.example .env
+# Edit .env with your database credentials and API keys
+
+# Install dependencies and set up database
+npm run setup
+
+# Start the development server
 npm run dev
 ```
 
-The application will be available at `http://localhost:3000`.
+The app will be running at **http://localhost:4007**
 
-## Prisma Database Setup
-
-This project uses Prisma ORM for database management. After making changes to the database schema or if you encounter TypeScript errors related to Prisma models, you may need to regenerate the Prisma client.
+### Docker Deployment
 
 ```bash
-# Generate Prisma client (after schema changes)
-npm run db:generate
+# Build and start all services (PostgreSQL + Redis + App)
+docker compose up -d --build
 
-# Push schema changes to database
-npm run db:push
-
-# Create and apply migration
-npm run db:migrate
-
-# Open Prisma Studio to view database content
-npm run db:studio
+# The app will be available at http://localhost:4007
 ```
 
-If you encounter TypeScript errors like `Property 'forumPost' does not exist on type 'PrismaClient'`, run `npm run db:generate` to regenerate the client based on the current schema.
+### Environment Variables
 
-## Demo Accounts
+```env
+# Required
+DATABASE_URL=postgresql://user:password@localhost:5432/lspu_kmis
+REDIS_URL=redis://localhost:6379
+JWT_SECRET=your-secret-key
+NEXT_PUBLIC_API_URL=http://localhost:4007
 
-- **Admin**: admin@lspu.edu.ph / admin
-- **Faculty**: faculty@lspu.edu.ph / faculty
-- **Student**: student@lspu.edu.ph / student
-- **External**: external@partner.com / external
+# AI Services (optional — enables AI features)
+COLIVARA_API_KEY=           # Vector search
+OPENAI_API_KEY=             # GPT-4o-mini for QPRO analysis
+GEMINI_API_KEY=             # Google Gemini generation
+QWEN_API_KEY=               # Qwen via OpenRouter
 
-## Key Features
+# File Storage
+AZURE_STORAGE_CONNECTION_STRING=
+AZURE_STORAGE_CONTAINER_NAME=
+```
 
-### Authentication & Authorization
-- Role-based access control
-- Secure login with session management
-- Protected routes for authenticated users only
+### Available Scripts
 
-### Knowledge Repository
-- Centralized document storage
-- Search and filtering capabilities
-- Download tracking and analytics
+| Command | Description |
+|:---|:---|
+| `npm run dev` | Start dev server (port 4007) |
+| `npm run build` | Production build |
+| `npm start` | Start production server |
+| `npm test` | Run test suite |
+| `npm run test:watch` | TDD watch mode |
+| `npm run db:migrate` | Create & apply database migrations |
+| `npm run db:push` | Sync schema without migrations |
+| `npm run db:studio` | Open Prisma Studio (visual DB explorer) |
+| `npm run health-check` | Run system health diagnostics |
 
-### Collaboration Tools
-- Reply and like functionality
-- Category-based organization
+<br />
 
-### Analytics & Reporting
-- Usage statistics
-- Document popularity tracking
-- User engagement metrics
+## 🏗 Architecture
 
-### Responsive Design
-- Mobile-first approach
-- Works on all device sizes
-- Touch-friendly interface
+```
+┌─────────────────────────────────────────────────────────┐
+│                     Client (Browser)                     │
+│         Next.js App Router · React 19 · Tailwind         │
+└──────────────────────┬──────────────────────────────────┘
+                       │
+┌──────────────────────▼──────────────────────────────────┐
+│                   API Layer (44 endpoints)                │
+│            JWT Auth Middleware · RBAC Guards              │
+├──────────┬───────────┬──────────┬───────────────────────┤
+│   Auth   │ Documents │  Search  │   QPRO / Analytics    │
+│  7 APIs  │  10 APIs  │  5 APIs  │      22+ APIs         │
+└────┬─────┴─────┬─────┴────┬─────┴─────┬─────────────────┘
+     │           │          │           │
+┌────▼───┐ ┌────▼────┐ ┌───▼───┐ ┌────▼──────────────┐
+│ JWT +  │ │ Prisma  │ │Colivara│ │ Analysis Engine   │
+│ bcrypt │ │  ORM    │ │Vector  │ │ (GPT-4o-mini)     │
+└────────┘ └────┬────┘ │Search  │ │ + LangChain       │
+                │      └───┬───┘ └────────────────────┘
+           ┌────▼────┐ ┌───▼────┐
+           │PostgreSQL│ │ Redis  │
+           │   16     │ │   7    │
+           └─────────┘ └────────┘
+```
 
-## Compliance
+### Data Model (14 models)
 
-The system is designed with compliance in mind:
-- RA 10173 Data Privacy Act compliant
-- Secure authentication and session management
-- Role-based access control for sensitive information
+```
+User ──┬── Document ──┬── DocumentPermission
+       │              ├── DocumentComment (threaded)
+       │              ├── DocumentDownload
+       │              ├── DocumentView
+       │              ├── ColivaraIndex (vectors)
+       │              └── QPROAnalysis ──┬── AggregationActivity
+       │                                └── KPIContribution
+       ├── UnitPermission
+       └── Activity (audit log)
 
-## Future Enhancements
+Unit ──── KRAggregation ── KPITarget
+```
 
-Planned improvements include:
-- Integration with university systems (LMS, SIS)
-- Advanced AI-powered search capabilities
-- Real backend API integration
-- Enhanced analytics and reporting features
-- Mobile application development
+### Role Hierarchy
 
-## Contributing
+```
+ADMIN (4)    →  Full system access, all units
+FACULTY (3)  →  Assigned unit, document upload, QPRO analysis
+STUDENT (2)  →  Read-only with explicit permissions
+EXTERNAL (1) →  Limited read access
+```
 
-This project is maintained by the LSPU IT Department. For issues or feature requests, please contact the development team.
+<br />
 
-## License
+## 📡 API Reference
 
-This project is proprietary to Laguna State Polytechnic University.
+<details>
+<summary><strong>Authentication</strong> (7 endpoints)</summary>
+
+| Method | Endpoint | Description |
+|:---|:---|:---|
+| POST | `/api/auth/login` | Authenticate user |
+| POST | `/api/auth/signup` | Register new user |
+| POST | `/api/auth/refresh` | Refresh access token |
+| POST | `/api/auth/logout` | Logout & invalidate session |
+| GET | `/api/auth/me` | Get current user profile |
+| POST | `/api/auth/update-password` | Update password |
+| POST | `/api/auth/reset-password` | Reset user password |
+
+</details>
+
+<details>
+<summary><strong>Documents</strong> (10 endpoints)</summary>
+
+| Method | Endpoint | Description |
+|:---|:---|:---|
+| GET | `/api/documents` | List documents (paginated, filtered) |
+| POST | `/api/documents` | Upload new document |
+| GET | `/api/documents/[id]` | Get document details |
+| DELETE | `/api/documents/[id]` | Delete document |
+| GET | `/api/documents/[id]/preview` | Preview document |
+| GET | `/api/documents/[id]/download` | Download document |
+| GET/POST | `/api/documents/[id]/permissions` | Manage permissions |
+| GET/POST | `/api/documents/[id]/comments` | Threaded comments |
+| POST | `/api/documents/[id]/analyze` | AI analysis |
+
+</details>
+
+<details>
+<summary><strong>Search</strong> (5 endpoints)</summary>
+
+| Method | Endpoint | Description |
+|:---|:---|:---|
+| GET | `/api/search` | Semantic + keyword search |
+| POST | `/api/search/chat-query` | Chat with document |
+| POST | `/api/search/chat-upload` | Upload file for chat |
+| POST | `/api/search/chat-cleanup` | Cleanup temp documents |
+| POST | `/api/search/clear-cache` | Clear search cache |
+
+</details>
+
+<details>
+<summary><strong>QPRO & Analytics</strong> (15+ endpoints)</summary>
+
+| Method | Endpoint | Description |
+|:---|:---|:---|
+| POST | `/api/analyze-qpro` | Run QPRO analysis |
+| POST | `/api/qpro/upload` | Upload QPRO document |
+| GET | `/api/qpro/analyses` | List all analyses |
+| POST | `/api/qpro/approve/[id]` | Approve/reject analysis |
+| GET | `/api/qpro/trends` | Trend data |
+| GET | `/api/aggregations` | KRA/KPI aggregation |
+| GET/PUT | `/api/kpi-targets` | KPI target management |
+| GET/POST | `/api/kpi-contributions` | Contribution tracking |
+| GET | `/api/kpi-progress` | KPI progress data |
+| GET | `/api/analytics` | Dashboard analytics |
+
+</details>
+
+<br />
+
+## 📁 Project Structure
+
+```
+├── app/                        # Next.js App Router
+│   ├── api/                    # 44 API route handlers
+│   │   ├── auth/               #   Authentication endpoints
+│   │   ├── documents/          #   Document CRUD & permissions
+│   │   ├── search/             #   Semantic search & chat
+│   │   ├── qpro/               #   QPRO analysis engine
+│   │   └── ...                 #   Analytics, units, KPIs
+│   ├── dashboard/              # Dashboard page
+│   ├── repository/             # Document browser & preview
+│   ├── search/                 # AI-powered search page
+│   ├── qpro/                   # QPRO analysis pages
+│   └── units/                  # Unit management pages
+│
+├── components/                 # React components
+│   ├── qpro/                   #   12 QPRO-specific components
+│   └── ui/                     #   shadcn/ui component library
+│
+├── lib/                        # Core business logic
+│   ├── services/               #   29 service modules
+│   │   ├── auth-service.ts     #     JWT auth & session
+│   │   ├── colivara-service.ts #     Vector search (1400+ LOC)
+│   │   ├── analysis-engine-service.ts  # QPRO AI engine
+│   │   └── ...
+│   ├── middleware/              #   Auth middleware
+│   ├── utils/                  #   RBAC, helpers
+│   └── data/                   #   Strategic plan data
+│
+├── prisma/                     # Database schema & migrations
+├── __tests__/                  # Jest test suite (7 test files)
+├── scripts/                    # Admin & maintenance utilities
+├── docs/                       # Technical documentation
+│   └── thesis/                 #   Academic framework docs
+└── docker-compose.yml          # Full-stack Docker deployment
+```
+
+<br />
+
+## 🧪 Testing
+
+```bash
+# Run all tests
+npm test
+
+# Watch mode for TDD
+npm run test:watch
+```
+
+Test suite covers:
+- QPRO analysis engine logic
+- KPI type-aware aggregation
+- String conversion utilities
+- Service layer integration
+- Model capabilities validation
+
+<br />
+
+## 🐳 Docker Deployment
+
+The system ships as a complete Docker Compose stack:
+
+| Service | Image | Port |
+|:---|:---|:---|
+| **app** | Node 20 Alpine (multi-stage) | 4007 |
+| **postgres** | PostgreSQL 16 Alpine | 5432 |
+| **redis** | Redis 7 Alpine | 6379 |
+
+```bash
+# Start everything
+docker compose up -d --build
+
+# View logs
+docker compose logs -f app
+
+# Run database migrations
+docker compose exec app npx prisma migrate deploy
+```
+
+<br />
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+<br />
+
+## 📄 License
+
+This project was developed as an academic thesis project for **Laguna State Polytechnic University**.
+
+<br />
+
+---
+
+<div align="center">
+
+**Built with ❤️ for LSPU**
+
+*Laguna State Polytechnic University — Knowledge Management Information System*
+
+<br />
+
+[![GitHub](https://img.shields.io/badge/GitHub-Suarenz%2FLSPU--KMIS-181717?style=flat-square&logo=github)](https://github.com/Suarenz/LSPU-KMIS)
+
+</div>

@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Download, Eye, FileText, RotateCcw, X, TrendingUp, Lightbulb, Target, AlertTriangle, CheckCircle2, Zap } from 'lucide-react';
 import { ClientOnly } from '@/components/client-only-wrapper';
-import { useToast } from '@/components/ui/use-toast';
+import { useToast } from '@/hooks/use-toast';
 import { Document } from '@/lib/api/types';
 import AuthService from '@/lib/services/auth-service';
 import { ExternalLink, Loader2 } from 'lucide-react';
