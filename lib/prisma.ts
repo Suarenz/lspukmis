@@ -3,7 +3,10 @@ import { PrismaClient } from '@prisma/client'
 // Create Prisma client instance
 const createPrismaClient = () => {
   return new PrismaClient({
-    log: ['query', 'info', 'warn', 'error'], // Enable detailed logging
+    // Only enable verbose query logging in development to avoid flooding production logs
+    log: process.env.NODE_ENV === 'production'
+      ? ['warn', 'error']
+      : ['query', 'info', 'warn', 'error'],
   })
 }
 

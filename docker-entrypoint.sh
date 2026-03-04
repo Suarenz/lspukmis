@@ -33,10 +33,13 @@ fi
 
 # Run Prisma migrations/push to ensure schema is up to date
 echo "📦 Running Prisma database push..."
-npx prisma@6.19.0 db push --accept-data-loss 2>&1 || {
+# Note: --accept-data-loss removed intentionally — destructive schema changes will
+# fail loudly instead of silently wiping data. Use 'prisma migrate deploy' for
+# production migrations that drop columns/tables.
+npx prisma@6.19.0 db push 2>&1 || {
   echo "⚠️  First attempt failed, regenerating Prisma client..."
   npx prisma@6.19.0 generate 2>&1
-  npx prisma@6.19.0 db push --accept-data-loss 2>&1
+  npx prisma@6.19.0 db push 2>&1
 }
 
 # Check and create default users if needed

@@ -6,11 +6,12 @@ class BaseAPI {
   protected headers: HeadersInit;
 
   constructor() {
-    // Check if running in browser before accessing window
+    // In the browser, use the current origin so it works on any domain (dev or prod).
+    // On the server (SSR), fall back to NEXT_PUBLIC_API_BASE_URL or localhost for dev.
     const defaultUrl = typeof window !== 'undefined'
-      ? 'http://localhost:3000/api'
-      : 'http://localhost:3000/api';
-      
+      ? `${window.location.origin}/api`
+      : (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api');
+
     this.baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || defaultUrl;
     this.headers = {
       'Content-Type': 'application/json',

@@ -1,0 +1,124 @@
+# render.yaml — Render.com Infrastructure as Code
+# Docs: https://render.com/docs/blueprint-spec
+#
+# Deploy with: connect your GitHub repo to Render and it will auto-detect this file.
+# Or manually create services on the Render dashboard using the settings below.
+
+services:
+  - type: web
+    name: lspu-kmis
+    runtime: docker
+    # ⚠️ Minimum Standard plan required — the free/starter tier (~512 MB RAM)
+    # will run out of memory due to Next.js + Prisma + AI SDK memory usage.
+    plan: standard
+    healthCheckPath: /api/health
+    # Render sets PORT env var automatically; Next.js standalone listens on 3000 by default
+    # The docker-entrypoint.sh respects the PORT env var via ${PORT:-3000}
+    envVars:
+
+      # ── Application ──────────────────────────────────────────────────────────
+      - key: NODE_ENV
+        value: production
+
+      - key: PORT
+        value: 3000
+
+      # Set this to your Render service URL after first deploy, e.g.:
+      #   https://lspu-kmis.onrender.com/api
+      # This fixes the client-side API URL — required for the app to work.
+      - key: NEXT_PUBLIC_API_BASE_URL
+        value: https://lspu-kmis.onrender.com/api
+
+      - key: NEXT_PUBLIC_API_URL
+        value: https://lspu-kmis.onrender.com
+
+      # ── Database ─────────────────────────────────────────────────────────────
+      # Automatically injected from the Render PostgreSQL service below
+      - key: DATABASE_URL
+        fromDatabase:
+          name: lspu-kmis-db
+          property: connectionString
+
+      # DIRECT_URL is used by Prisma for direct connections (bypassing PgBouncer).
+      # Point to the same Render PostgreSQL connection string.
+      - key: DIRECT_URL
+        fromDatabase:
+          name: lspu-kmis-db
+          property: connectionString
+
+      # ── Security ─────────────────────────────────────────────────────────────
+      # Render auto-generates a secure random value for this
+      - key: JWT_SECRET
+        generateValue: true
+
+      # ── Azure Blob Storage (REQUIRED — hard error if missing) ────────────────
+      # Get from Azure Portal → Storage Account → Access Keys → Connection string
+      - key: AZURE_STORAGE_CONNECTION_STRING
+        sync: false  # Mark as secret — set manually in Render dashboard
+
+      - key: AZURE_STORAGE_ACCOUNT_NAME
+        sync: false  # Set manually in Render dashboard
+
+      # Optional: defaults to 'repository-files' in code
+      # - key: AZURE_STORAGE_CONTAINER_NAME
+      #   value: repository-files
+
+      # ── Redis / Upstash (optional — in-memory fallback if unset) ────────────
+      # Sign up at https://console.upstash.com and create a Redis database
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false
+
+      # ── Upstash Vector (optional) ────────────────────────────────────────────
+      - key: UPSTASH_VECTOR_REST_URL
+        sync: false
+
+      - key: UPSTASH_VECTOR_REST_TOKEN
+        sync: false
+
+      # ── Colivara Vector Search (optional) ────────────────────────────────────
+      - key: COLIVARA_API_KEY
+        sync: false
+
+      - key: COLIVARA_API_ENDPOINT
+        sync: false
+
+      # ── AI Services (optional — features degrade gracefully if unset) ────────
+      # Google Gemini
+      - key: GOOGLE_AI_API_KEY
+        sync: false
+
+      # OpenAI / OpenRouter
+      - key: OPENAI_API_KEY
+        sync: false
+
+      - key: OPENAI_BASE_URL
+        value: https://openrouter.ai/api/v1
+        # Change to https://api.openai.com/v1 if using OpenAI directly
+
+      # Qwen (via OpenRouter by default)
+      - key: QWEN_API_KEY
+        sync: false
+
+      - key: QWEN_MODEL
+        value: qwen/qwen-2.5-vl-72b-instruct
+
+      - key: QWEN_BASE_URL
+        value: https://openrouter.ai/api/v1
+
+      # ── Supabase Image Hostname (optional) ───────────────────────────────────
+      # Set this if you use Supabase for image storage.
+      # Overrides the default hostname in next.config.mjs remotePatterns.
+      # Format: yourprojectid.supabase.co (no https://)
+      # - key: NEXT_PUBLIC_SUPABASE_HOSTNAME
+      #   value: yourprojectid.supabase.co
+
+# ── PostgreSQL Database ────────────────────────────────────────────────────────
+databases:
+  - name: lspu-kmis-db
+    databaseName: lspu_kmis
+    user: kmis_user
+    plan: starter   # $7/mo — upgrade to Standard for production workload
+    region: oregon  # Change to your preferred region (matches web service region)
