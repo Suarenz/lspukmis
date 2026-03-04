@@ -368,9 +368,9 @@ export default function DocumentPreviewPage() {
             primary: '#2B4385',
             secondary: '#ffffff',
             tertiary: '#f3f4f6',
-            textPrimary: '#000000',
-            textSecondary: '#5b5b5b',
-            textTertiary: '#00000099',
+            text_primary: '#000000',
+            text_secondary: '#5b5b5b',
+            text_tertiary: '#00000099',
             disableThemeScrollbar: false,
           }}
         />

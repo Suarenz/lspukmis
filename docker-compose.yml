@@ -51,9 +51,9 @@ services:
     env_file:
       - .env.docker
     environment:
-      # Database - connects to Docker postgres service
-      DATABASE_URL: postgresql://${DB_USER:-kmis_user}:${DB_PASSWORD:-secure_password_change_me}@postgres:5432/${DB_NAME:-lspu_kmis}
-      DIRECT_URL: postgresql://${DB_USER:-kmis_user}:${DB_PASSWORD:-secure_password_change_me}@postgres:5432/${DB_NAME:-lspu_kmis}
+      # Database - uses DATABASE_URL from .env.docker (Azure PostgreSQL)
+      DATABASE_URL: ${DATABASE_URL}
+      DIRECT_URL: ${DIRECT_URL}
       
       # Redis - local Docker Redis
       REDIS_URL: redis://redis:6379
