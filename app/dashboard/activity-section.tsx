@@ -181,10 +181,11 @@ export default function ActivitySection() {
   }
 
   return (
-    <div>
-      <h2 className="text-2xl font-bold mb-4 text-gray-900">Recent Activity</h2>
-      <Card className="border-0 bg-white">
-        <CardContent className="pt-6">
+    <Card className="border-0 bg-white h-full w-full max-h-[450px] overflow-hidden flex flex-col shadow-sm">
+      <div className="px-6 py-4 border-b">
+        <h2 className="text-lg font-semibold text-gray-900">Recent Activity</h2>
+      </div>
+      <CardContent className="pt-6 overflow-y-auto custom-scrollbar flex-1">
           <div className="space-y-4">
             {recentActivity.length > 0 ? (
               recentActivity.map((activity, index) => (
@@ -196,6 +197,5 @@ export default function ActivitySection() {
           </div>
         </CardContent>
       </Card>
-    </div>
   );
 }

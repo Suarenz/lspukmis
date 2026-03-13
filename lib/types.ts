@@ -20,6 +20,7 @@ export interface Document {
   uploadedById: string
   uploadedAt: Date
   fileUrl: string
+  fileName: string
   fileType: string
   fileSize: number
   downloads: number

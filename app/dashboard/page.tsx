@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useEffect, memo, lazy, Suspense } from "react"
@@ -8,11 +9,14 @@ import Image from "next/image"
 import { ClientOnly } from "@/components/client-only-wrapper"
 
 // Lazy load non-critical sections for better initial load performance
-const StatsSection = lazy(() => import('./stats-section'));
-const QuickActionsSection = lazy(() => import('./quick-actions-section'));
-const ChartsSection = lazy(() => import('./charts-section'));
-const DocumentsSection = lazy(() => import('./documents-section'));
-const ActivitySection = lazy(() => import('./activity-section'));
+const StatsSection = lazy(() => import("./stats-section"));
+const QuickActionsSection = lazy(() => import("./quick-actions-section"));
+const ChartsSection = lazy(() => import("./charts-section"));
+const DocumentsSection = lazy(() => import("./documents-section"));
+const ActivitySection = lazy(() => import("./activity-section"));
+const KraRadarChart = lazy(() => import("./kra-radar-chart").then((m) => ({ default: m.KraRadarChart })));
+const UnitLeaderboard = lazy(() => import("./unit-leaderboard").then((m) => ({ default: m.UnitLeaderboard })));
+const StrategicInsightsFeed = lazy(() => import("./strategic-insights-feed").then((m) => ({ default: m.StrategicInsightsFeed })));
 
 // Memoized loading component to prevent unnecessary re-renders
 const LoadingSpinner = memo(() => (
@@ -86,48 +90,63 @@ export default function DashboardPage() {
 
   return (
     <ClientOnly>
-      <div className="min-h-screen w-full" style={{ backgroundColor: '#F3F4F6' }}>
+      <div className="min-h-screen w-full" style={{ backgroundColor: "#F3F4F6" }}>
         <Navbar />
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
-          {/* Stats Grid - Critical section, loaded immediately */}
-          <div className="mb-8">
-            <Suspense fallback={<SectionLoader />}>
-              <StatsSection />
-            </Suspense>
-          </div>
-
-          {/* Quick Actions - Non-critical section, lazy loaded */}
-          <div className="mb-8">
+          {/* Quick Actions */}
+          <div className="mb-6">
             <Suspense fallback={<SectionLoader />}>
               <QuickActionsSection />
             </Suspense>
           </div>
 
+          {/* Stats Grid - Critical section, loaded immediately */}
+          <div className="mb-6">
+            <Suspense fallback={<SectionLoader />}>
+              <StatsSection />
+            </Suspense>
+          </div>
+
           {/* Charts - Data Visualization */}
-          <div className="mb-8">
+          <div className="mb-6">
             <Suspense fallback={<SectionLoader />}>
               <ChartsSection />
             </Suspense>
           </div>
 
-          {/* Two-Column Layout: Recent Documents + Recent Activity */}
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-            {/* Left Column: Recent Documents (~60%) */}
-            <div className="lg:col-span-3">
+          {/* Radar Chart & Activity - grid layout matching user request */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+            <div className="lg:col-span-1">
               <Suspense fallback={<SectionLoader />}>
-                <DocumentsSection />
+                <KraRadarChart />
               </Suspense>
             </div>
-
-            {/* Right Column: Recent Activity (~40%) */}
             <div className="lg:col-span-2">
               <Suspense fallback={<SectionLoader />}>
                 <ActivitySection />
               </Suspense>
             </div>
           </div>
+
+          {/* Recent Documents Table View */}
+          <div className="mb-6">
+             <Suspense fallback={<SectionLoader />}>
+               <DocumentsSection />
+             </Suspense>
+          </div>
+
+          {/* Leaderboard and Insights Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+            <Suspense fallback={<SectionLoader />}>
+              <UnitLeaderboard />
+            </Suspense>
+            <Suspense fallback={<SectionLoader />}>
+              <StrategicInsightsFeed />
+            </Suspense>
+          </div>
         </main>
       </div>
     </ClientOnly>
  )
 }
+

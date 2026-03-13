@@ -16,9 +16,12 @@ import {
   PieChart,
   Pie,
   Cell,
-  type PieLabelRenderProps,
+  Legend,
 } from "recharts"
 import AuthService from "@/lib/services/auth-service"
+
+import { lazy, Suspense } from "react"
+const KraRadarChart = lazy(() => import('./kra-radar-chart').then(m => ({ default: m.KraRadarChart })))
 
 const MONTH_LABELS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -50,34 +53,6 @@ function formatMonth(dateStr: string): string {
   if (parts.length < 2) return dateStr
   const monthIndex = parseInt(parts[1], 10) - 1
   return MONTH_LABELS[monthIndex] ?? dateStr
-}
-
-function renderPieLabel(props: PieLabelRenderProps) {
-  const cx = Number(props.cx ?? 0)
-  const cy = Number(props.cy ?? 0)
-  const midAngle = Number(props.midAngle ?? 0)
-  const outerRadius = Number(props.outerRadius ?? 0)
-  const payload = (props as unknown as { payload?: CategoryItem }).payload
-  const category = payload?.category ?? ""
-  const count = payload?.count ?? 0
-
-  const RADIAN = Math.PI / 180
-  const radius = outerRadius + 24
-  const x = cx + radius * Math.cos(-midAngle * RADIAN)
-  const y = cy + radius * Math.sin(-midAngle * RADIAN)
-
-  return (
-    <text
-      x={x}
-      y={y}
-      fill="#374151"
-      textAnchor={x > cx ? "start" : "end"}
-      dominantBaseline="central"
-      className="text-xs"
-    >
-      {category} ({count})
-    </text>
-  )
 }
 
 export default function ChartsSection() {
@@ -160,15 +135,15 @@ export default function ChartsSection() {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
       {/* Area Chart — Document Uploads Over Time */}
-      <Card className="lg:col-span-3 border-0 bg-white hover:shadow-lg transition-shadow">
+      <Card className="lg:col-span-3 border-0 bg-white hover:shadow-lg transition-shadow h-full flex flex-col">
         <CardHeader>
           <CardTitle className="text-sm font-medium text-gray-500">
             Document Uploads Over Time
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex-1 w-full relative">
           {hasAreaData ? (
-            <ChartContainer config={areaChartConfig} className="h-[280px] w-full">
+            <ChartContainer config={areaChartConfig} className="absolute inset-0 h-full w-full">
               <AreaChart data={areaData} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
                 <defs>
                   <linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1">
@@ -208,13 +183,13 @@ export default function ChartsSection() {
       </Card>
 
       {/* Pie / Donut Chart — Documents by Category */}
-      <Card className="lg:col-span-2 border-0 bg-white hover:shadow-lg transition-shadow">
+      <Card className="lg:col-span-2 border-0 bg-white hover:shadow-lg transition-shadow h-full flex flex-col">
         <CardHeader>
           <CardTitle className="text-sm font-medium text-gray-500">
             Documents by Category
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex-1 flex flex-col justify-center">
           {hasPieData ? (
             <ChartContainer config={pieChartConfig} className="h-[280px] w-full">
               <PieChart>
@@ -224,11 +199,10 @@ export default function ChartsSection() {
                   dataKey="count"
                   nameKey="category"
                   cx="50%"
-                  cy="50%"
+                  cy="45%"
                   innerRadius={55}
                   outerRadius={90}
                   paddingAngle={3}
-                  label={renderPieLabel}
                   animationDuration={800}
                 >
                   {categoryDistribution.map((entry, index) => (
@@ -238,6 +212,7 @@ export default function ChartsSection() {
                     />
                   ))}
                 </Pie>
+                <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
               </PieChart>
             </ChartContainer>
           ) : (
@@ -247,6 +222,7 @@ export default function ChartsSection() {
           )}
         </CardContent>
       </Card>
+
     </div>
   )
 }

@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import type { Document, Unit } from "@/lib/api/types"
-import { Download, Eye, FileText, Filter, Upload, SearchIcon, EyeIcon, Trash2, CheckCircle, XCircle, Building2, ChevronLeft, ChevronRight, MoreVertical, FileSpreadsheet, FileImage, File } from "lucide-react"
+import { Download, Eye, FileText, Filter, Upload, SearchIcon, EyeIcon, Trash2, CheckCircle, XCircle, Building2, ChevronLeft, ChevronRight, MoreVertical, FileSpreadsheet, FileImage, File, LayoutGrid, List } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import Image from "next/image"
 import { ClientOnly } from "@/components/client-only-wrapper"
@@ -25,6 +25,65 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+
+const isImageFile = (fileName: string) => {
+    const ext = fileName?.split('.').pop()?.toLowerCase();
+    return ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext || '');
+};
+
+const SecureThumbnail = ({ doc, className }: { doc: Document; className?: string }) => {
+  const [imgUrl, setImgUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let objectUrl: string;
+    
+    const fetchImage = async () => {
+      try {
+        const token = await AuthService.getAccessToken();
+        const response = await fetch(`/api/documents/${doc.id}/view-proxy`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        
+        if (response.ok) {
+          const blob = await response.blob();
+          objectUrl = URL.createObjectURL(blob);
+          setImgUrl(objectUrl);
+        } else {
+          setImgUrl(doc.fileUrl || null); // fallback
+        }
+      } catch (error) {
+        console.error("Error fetching thumbnail:", error);
+        setImgUrl(doc.fileUrl || null);
+      }
+    };
+
+    fetchImage();
+
+    return () => {
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [doc.id, doc.fileUrl]);
+
+  if (!imgUrl) {
+    return <div className={`bg-gray-100 animate-pulse ${className}`} />;
+  }
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={imgUrl}
+      alt={doc.title || 'Thumbnail'}
+      className={className}
+      onError={(e) => {
+        (e.target as HTMLImageElement).src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" fill="%23eee"><rect width="100" height="100"/></svg>';
+      }}
+    />
+  );
+};
 
 export default function RepositoryPage() {
   const { toast } = useToast()
@@ -49,6 +108,7 @@ export default function RepositoryPage() {
  const [downloadingDocId, setDownloadingDocId] = useState<string | null>(null);
   const [units, setUnits] = useState<Unit[]>([]); // NEW: Units for unit filtering
  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
   
 // Determine if user can upload (roles are uppercase as per database enum)
   const canUpload = user?.role === "ADMIN" || user?.role === "FACULTY"
@@ -370,7 +430,7 @@ export default function RepositoryPage() {
     );
   }
 
-  const categories = ["all", "Other files", "Research", "Academic", "Policy", "Extension", "Teaching"]; // Using standard categories
+  const categories = ["all", "Other files", "QPRO"]; // Using standard categories
   
   // NEW: Use all units since there's no status property
   const activeUnits = units;
@@ -427,15 +487,17 @@ export default function RepositoryPage() {
                 units={activeUnits}
                 currentUnit={unitFilter}
                 onUnitSelect={(unitId) => {
-                  // Navigate to the unit page instead of just filtering
+                  // Navigate to the repository page with unit filter
                   if (unitId) {
-                    router.push(`/units/${unitId}`);
+                    router.push(`/repository?unit=${unitId}`);
                   } else {
                     router.push('/repository');
                   }
                 }}
                 userRole={user?.role || ''}
                 userUnit={user?.unitId || null}
+                canUpload={canUpload}
+                onUploadClick={() => setShowUploadModal(true)}
               />
             </div>
           )}
@@ -444,7 +506,19 @@ export default function RepositoryPage() {
           <main className="flex-1 lg:ml-0">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
               {/* Header */}
-              <div className="mb-8 animate-fade-in">
+              <div className="mb-4 animate-fade-in">
+                {/* Breadcrumb */}
+                <div className="text-sm border-b pb-2 text-gray-500 mb-4 font-medium flex items-center gap-2">
+                  <span className="cursor-pointer hover:text-[#2B4385] transition-colors" onClick={() => router.push('/repository')}>Repository</span>
+                  {unitFilter && (
+                    <>
+                      <ChevronRight className="w-4 h-4 text-gray-400" />
+                      <span className="cursor-pointer hover:text-[#2B4385] transition-colors" onClick={() => router.push('/repository')}>Units</span>
+                      <ChevronRight className="w-4 h-4 text-gray-400" />
+                      <span className="text-[#2B4385] font-semibold">{activeUnits.find(u => u.id === unitFilter)?.name || ''}</span>
+                    </>
+                  )}
+                </div>
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                   <div className="flex items-center gap-2">
                     <Button
@@ -460,35 +534,52 @@ export default function RepositoryPage() {
                       <p className="text-gray-500">Browse and access institutional knowledge resources</p>
                     </div>
                   </div>
-                  {isAuthenticated && user && canUpload && (
-                   <Button
-                     className="gap-2 shadow-sm"
-                     style={{ backgroundColor: '#2B4385', color: 'white' }}
-                     onClick={() => setShowUploadModal(true)}
-                   >
-                     <Upload className="w-4 h-4" />
-                     Upload Document
-                   </Button>
-                 )}
                 </div>
               </div>
               
               {/* Search and Filters - Unified Control Center */}
-              <div className="mb-6 animate-fade-in p-4 bg-white rounded-xl shadow-sm" style={{ boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06)' }}>
-                <div className="flex flex-col md:flex-row gap-4">
+              <div className="mb-6 animate-fade-in flex flex-col gap-4">
+                <div className="flex gap-4 items-center">
                   <div className="flex-1 relative">
                     <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                     <Input
                       placeholder="Search documents or keywords..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-10 h-11 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
+                      className="pl-10 h-11 border-gray-200 focus:border-blue-500 focus:ring-blue-500 shadow-sm"
                       style={{ borderRadius: '8px' }}
                     />
                   </div>
+                  {/* View Mode Toggles */}
+                  <div className="flex items-center border rounded-lg overflow-hidden bg-white shadow-sm shrink-0">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setViewMode('list')}
+                      className={`rounded-none h-11 w-11 ${viewMode === 'list' ? 'bg-muted' : ''}`}
+                    >
+                      <List className="h-5 w-5" />
+                    </Button>
+                    <div className="w-px h-6 bg-border mx-0" />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setViewMode('grid')}
+                      className={`rounded-none h-11 w-11 ${viewMode === 'grid' ? 'bg-muted' : ''}`}
+                    >
+                      <LayoutGrid className="h-5 w-5" />
+                    </Button>
+                  </div>
+                </div>
+                
+                {/* Filter Chips */}
+                <div className="flex flex-wrap gap-2 items-center text-sm">
+                  <span className="text-gray-500 font-medium mr-1">Filters:</span>
                   <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                    <SelectTrigger className="w-full md:w-48 h-11" style={{ backgroundColor: '#F9FAFB', borderRadius: '8px' }}>
-                      <Filter className="w-4 h-4 mr-2 text-gray-500" />
+                    <SelectTrigger className="h-8 rounded-full bg-white border-dashed text-xs w-auto px-3 py-1 shadow-sm gap-2">
+                      <Filter className="w-3 h-3 text-gray-500" />
                       <SelectValue placeholder="Category" />
                     </SelectTrigger>
                     <SelectContent>
@@ -503,8 +594,8 @@ export default function RepositoryPage() {
                     value={unitFilter || "all"}
                     onValueChange={(value) => setUnitFilter(value === "all" ? null : value)}
                   >
-                    <SelectTrigger className="w-full md:w-48 h-11" style={{ backgroundColor: '#F9FAFB', borderRadius: '8px' }}>
-                      <Building2 className="w-4 h-4 mr-2 text-gray-500" />
+                    <SelectTrigger className="h-8 rounded-full bg-white border-dashed text-xs w-auto px-3 py-1 shadow-sm gap-2">
+                      <Building2 className="w-3 h-3 text-gray-500" />
                       <SelectValue placeholder="All Units" />
                     </SelectTrigger>
                     <SelectContent>
@@ -519,7 +610,182 @@ export default function RepositoryPage() {
                 </div>
               </div>
               
-              {/* Documents Grid */}
+              {/* Documents Display */}
+              {viewMode === 'list' && documents.length > 0 && (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mb-6">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm text-left">
+                      <thead className="bg-gray-50/50 text-gray-500 border-b border-gray-100">
+                        <tr>
+                          <th className="px-6 py-4 font-medium">Name</th>
+                          <th className="px-6 py-4 font-medium hidden md:table-cell">Date Uploaded</th>
+                          <th className="px-6 py-4 font-medium hidden lg:table-cell">Uploaded By</th>
+                          <th className="px-6 py-4 font-medium">Size</th>
+                          <th className="px-6 py-4 font-medium text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {documents.map((doc, index) => {
+                          const { icon: FileIcon, color: iconColor, bgColor: iconBgColor } = getFileIcon(doc.fileName || doc.title);
+                          const canDelete = user && (user.role === 'ADMIN' || doc.uploadedById === user.id);
+                          
+                          return (
+                            <tr 
+                              key={doc.id} 
+                              className="hover:bg-gray-50/50 transition-colors group cursor-pointer" 
+                              onClick={() => {
+                                if (doc.id && doc.id !== 'undefined' && !doc.id.includes('undefined')) {
+                                  router.push(`/repository/preview/${doc.id}`);
+                                }
+                              }}
+                            >
+                              <td className="px-6 py-4">
+                                <div className="flex items-center gap-3">
+                                  {isImageFile(doc.fileName || doc.title) && doc.fileUrl ? (
+                                    <SecureThumbnail doc={doc} className="w-10 h-10 min-w-10 rounded-lg object-cover border border-gray-100 shrink-0" />
+                                  ) : (
+                                    <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: iconBgColor }}>
+                                      <FileIcon className="w-5 h-5" style={{ color: iconColor }} />
+                                    </div>
+                                  )}
+                                  <div>
+                                    <div className="font-medium text-gray-900 line-clamp-1">{toTitleCase(doc.title)}</div>
+                                    <div className="text-xs text-gray-500 line-clamp-1 lg:hidden mt-0.5">{doc.uploadedBy}</div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 hidden md:table-cell text-gray-500">
+                                {doc.createdAt ? new Date(doc.createdAt).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "-"}
+                              </td>
+                              <td className="px-6 py-4 hidden lg:table-cell text-gray-500">
+                                {doc.uploadedBy}
+                              </td>
+                              <td className="px-6 py-4 text-gray-500 whitespace-nowrap">
+                                {formatFileSize(doc.fileSize)}
+                              </td>
+                              <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-gray-600">
+                                      <MoreVertical className="w-4 h-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={async (e) => {
+                                      e.stopPropagation();
+                                      setDownloadingDocId(doc.id);
+                                      try {
+                                        if (!isAuthenticated || !user) return;
+                                        const downloadToken = await AuthService.getAccessToken();
+                                        if (!downloadToken) {
+                                          await AuthService.logout();
+                                          router.push('/');
+                                          return;
+                                        }
+                                        const directDownloadUrl = `/api/documents/${doc.id}/download-direct?token=${downloadToken}`;
+                                        const link = document.createElement('a');
+                                        link.href = directDownloadUrl;
+                                        link.download = doc.fileName || `document-${doc.id}`;
+                                        document.body.appendChild(link);
+                                        link.click();
+                                        document.body.removeChild(link);
+                                      } catch (error) {
+                                        console.error('Download error:', error);
+                                        alert(error instanceof Error ? error.message : 'Failed to download document.');
+                                      } finally {
+                                        setDownloadingDocId(null);
+                                      }
+                                    }}>
+                                      {downloadingDocId === doc.id ? (
+                                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-900 mr-2"></div>
+                                      ) : (
+                                        <Download className="w-4 h-4 mr-2" />
+                                      )}
+                                      Download
+                                    </DropdownMenuItem>
+                                    
+                                    <DropdownMenuItem onClick={(e) => {
+                                      e.stopPropagation();
+                                      router.push(`/repository/preview/${doc.id}`);
+                                    }}>
+                                      <EyeIcon className="w-4 h-4 mr-2" />
+                                      Preview
+                                    </DropdownMenuItem>
+                                    
+                                    {doc.isQproDocument && (
+                                      <DropdownMenuItem onClick={async (e) => {
+                                        e.stopPropagation();
+                                        try {
+                                          const token = await AuthService.getAccessToken();
+                                          if (!token) {
+                                            await AuthService.logout();
+                                            router.push('/');
+                                            return;
+                                          }
+                                          const response = await fetch(`/api/qpro/by-document/${doc.id}`, {
+                                            headers: {
+                                              'Authorization': `Bearer ${token}`,
+                                              'Content-Type': 'application/json',
+                                            }
+                                          });
+                                          if (response.ok) {
+                                            const data = await response.json();
+                                            if (data.analysis) {
+                                              router.push(`/qpro/analysis/${data.analysis.id}`);
+                                            } else {
+                                              toast({
+                                                title: "No Analysis Found",
+                                                description: "This QPRO document hasn't been analyzed yet.",
+                                                variant: "default",
+                                              });
+                                            }
+                                          } else {
+                                            toast({
+                                              title: "No Analysis Found",
+                                              description: "This QPRO document hasn't been analyzed yet.",
+                                              variant: "default",
+                                            });
+                                          }
+                                        } catch (error) {
+                                          console.error('Error fetching QPRO analysis:', error);
+                                          toast({
+                                            title: "Error",
+                                            description: "Failed to fetch QPRO analysis.",
+                                            variant: "destructive",
+                                          });
+                                        }
+                                      }}>
+                                        <FileText className="w-4 h-4 mr-2" />
+                                        View QPRO Analysis
+                                      </DropdownMenuItem>
+                                    )}
+                                    
+                                    {canDelete && (
+                                      <DropdownMenuItem
+                                        className="text-red-600 focus:text-red-600 focus:bg-red-50"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setDocumentToDelete(doc);
+                                        }}
+                                        disabled={deletingDocId === doc.id}
+                                      >
+                                        <Trash2 className="w-4 h-4 mr-2" />
+                                        {deletingDocId === doc.id ? 'Deleting...' : 'Delete'}
+                                      </DropdownMenuItem>
+                                    )}
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+              
+              {viewMode === 'grid' && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {documents.map((doc, index) => {
                   const { icon: FileIcon, color: iconColor, bgColor: iconBgColor } = getFileIcon(doc.fileName || doc.title);
@@ -528,168 +794,39 @@ export default function RepositoryPage() {
                   return (
                     <div
                       key={doc.id}
-                      className="animate-fade-in bg-white rounded-xl overflow-hidden transition-all duration-300 hover:shadow-xl group flex flex-col"
+                      className="animate-fade-in bg-white rounded-xl overflow-hidden transition-all duration-200 hover:border-gray-300 group flex flex-col cursor-pointer border border-transparent"
                       style={{ 
                         animationDelay: `${index * 0.05}s`,
-                        boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06)',
-                        borderRadius: '12px',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                        border: '1px solid #e5e7eb',
                       }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.transform = 'translateY(-4px)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.transform = 'translateY(0)';
+                      onClick={() => {
+                        if (doc.id && doc.id !== 'undefined' && !doc.id.includes('undefined')) {
+                          router.push(`/repository/preview/${doc.id}`);
+                        } else {
+                          toast({
+                            title: "Error",
+                            description: "Cannot preview this document.",
+                            variant: "destructive",
+                          });
+                        }
                       }}
                     >
                       {/* Card Header */}
-                      <div className="p-4 pb-0 flex-1 flex flex-col">
-                        <div className="flex items-start justify-between gap-2 mb-3">
-                          <div className="w-12 h-12 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: iconBgColor }}>
-                            <FileIcon className="w-6 h-6" style={{ color: iconColor }} />
-                          </div>
-                          {(canDelete || doc.isQproDocument) && (
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <MoreVertical className="w-4 h-4 text-gray-500" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                {doc.isQproDocument && (
-                                  <DropdownMenuItem
-                                    onClick={async (e) => {
-                                      e.stopPropagation();
-                                      try {
-                                        const token = await AuthService.getAccessToken();
-                                        if (!token) {
-                                          await AuthService.logout();
-                                          router.push('/');
-                                          return;
-                                        }
-                                        const response = await fetch(`/api/qpro/by-document/${doc.id}`, {
-                                          headers: {
-                                            'Authorization': `Bearer ${token}`,
-                                            'Content-Type': 'application/json',
-                                          }
-                                        });
-                                        if (response.ok) {
-                                          const data = await response.json();
-                                          if (data.analysis) {
-                                            router.push(`/qpro/analysis/${data.analysis.id}`);
-                                          } else {
-                                            toast({
-                                              title: "No Analysis Found",
-                                              description: "This QPRO document hasn't been analyzed yet.",
-                                              variant: "default",
-                                            });
-                                          }
-                                        } else {
-                                          toast({
-                                            title: "No Analysis Found",
-                                            description: "This QPRO document hasn't been analyzed yet.",
-                                            variant: "default",
-                                          });
-                                        }
-                                      } catch (error) {
-                                        console.error('Error fetching QPRO analysis:', error);
-                                        toast({
-                                          title: "Error",
-                                          description: "Failed to fetch QPRO analysis.",
-                                          variant: "destructive",
-                                        });
-                                      }
-                                    }}
-                                  >
-                                    <FileText className="w-4 h-4 mr-2" />
-                                    View QPRO Analysis
-                                  </DropdownMenuItem>
-                                )}
-                                {canDelete && (
-                                  <DropdownMenuItem
-                                    className="text-red-600 focus:text-red-600 focus:bg-red-50"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setDocumentToDelete(doc);
-                                    }}
-                                    disabled={deletingDocId === doc.id}
-                                  >
-                                    <Trash2 className="w-4 h-4 mr-2" />
-                                    {deletingDocId === doc.id ? 'Deleting...' : 'Delete'}
-                                  </DropdownMenuItem>
-                                )}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          )}
-                        </div>
-                        
-                        {/* Title and Description */}
-                        <h4 className="text-lg font-semibold text-gray-900 line-clamp-2 mb-1 min-h-[3.5rem]">{toTitleCase(doc.title)}</h4>
-                        <p className="text-sm text-gray-500 line-clamp-2 mb-3 min-h-[2.5rem]">{doc.description}</p>
-                        
-                        {/* Metadata */}
-                        <p className="text-xs text-gray-400 mb-3">
-                          Uploaded by {doc.uploadedBy} • {formatFileSize(doc.fileSize)}
-                        </p>
-                      
-                        {/* Pill Tags */}
-                        <div className="flex flex-wrap gap-2 mb-4 min-h-[2rem]">
-                          {!unitFilter && doc.unit && (
-                            <span 
-                              className="px-3 py-1 text-xs font-medium rounded-full"
-                              style={{ backgroundColor: 'rgba(43, 67, 133, 0.1)', color: '#2B4385' }}
-                            >
-                              {doc.unit.code || doc.unit.name}
-                            </span>
-                          )}
-                          {doc.category && doc.category !== "Other files" && (
-                            <span 
-                              className="px-3 py-1 text-xs font-medium rounded-full"
-                              style={{ backgroundColor: '#F3F4F6', color: '#6B7280' }}
-                            >
-                              {doc.category}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      
-                      {/* Card Footer */}
-                      <div className="px-4 pb-4 mt-auto">
-                        <div className="flex items-center gap-3 text-sm text-gray-500 mb-4">
-                          <div className="flex items-center gap-1">
-                            <Download className="w-4 h-4" />
-                            <span>{doc.downloadsCount}</span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Eye className="w-4 h-4" />
-                            <span>{doc.viewsCount}</span>
-                          </div>
-                          <span className="ml-auto text-xs">v{doc.version}</span>
-                        </div>
-                        
-                        {/* Action Buttons */}
-                        <div className="flex gap-2">
-                          {downloadingDocId === doc.id ? (
-                            <Button 
-                              className="flex-1 gap-2" 
-                              size="sm" 
-                              disabled
-                              style={{ backgroundColor: '#2B4385', color: 'white', borderRadius: '8px' }}
-                            >
-                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                              Downloading...
-                            </Button>
-                          ) : (
-                            <Button
-                              className="flex-1 gap-2"
-                              size="sm"
-                              style={{ backgroundColor: '#2B4385', color: 'white', borderRadius: '8px' }}
-                                onClick={async (e) => {
-                                  e.stopPropagation();
+                      <div className="p-4 flex-1 flex flex-col relative">
+                        {/* More Menu inside card top right */}
+                        <div className="absolute top-4 right-4 z-10" onClick={(e) => e.stopPropagation()}>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-gray-600 bg-white/50 backdrop-blur-sm rounded-full">
+                                <MoreVertical className="w-4 h-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={async (e) => {
+                                e.stopPropagation();
                                 setDownloadingDocId(doc.id);
                                 try {
-                                  if (typeof window === 'undefined') {
-                                    throw new Error('Download can only be initiated from the browser');
-                                  }
                                   if (!isAuthenticated || !user) return;
                                   const downloadToken = await AuthService.getAccessToken();
                                   if (!downloadToken) {
@@ -710,39 +847,121 @@ export default function RepositoryPage() {
                                 } finally {
                                   setDownloadingDocId(null);
                                 }
-                              }}
-                            >
-                              <Download className="w-4 h-4" />
-                              Download
-                            </Button>
+                              }}>
+                                {downloadingDocId === doc.id ? (
+                                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-900 mr-2"></div>
+                                ) : (
+                                  <Download className="w-4 h-4 mr-2" />
+                                )}
+                                Download
+                              </DropdownMenuItem>
+                              {doc.isQproDocument && (
+                                <DropdownMenuItem
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    try {
+                                      const token = await AuthService.getAccessToken();
+                                      if (!token) {
+                                        await AuthService.logout();
+                                        router.push('/');
+                                        return;
+                                      }
+                                      const response = await fetch(`/api/qpro/by-document/${doc.id}`, {
+                                        headers: {
+                                          'Authorization': `Bearer ${token}`,
+                                          'Content-Type': 'application/json',
+                                        }
+                                      });
+                                      if (response.ok) {
+                                        const data = await response.json();
+                                        if (data.analysis) {
+                                          router.push(`/qpro/analysis/${data.analysis.id}`);
+                                        } else {
+                                          toast({
+                                            title: "No Analysis Found",
+                                            description: "This QPRO document hasn't been analyzed yet.",
+                                            variant: "default",
+                                          });
+                                        }
+                                      } else {
+                                        toast({
+                                          title: "No Analysis Found",
+                                          description: "This QPRO document hasn't been analyzed yet.",
+                                          variant: "default",
+                                        });
+                                      }
+                                    } catch (error) {
+                                      console.error('Error fetching QPRO analysis:', error);
+                                      toast({
+                                        title: "Error",
+                                        description: "Failed to fetch QPRO analysis.",
+                                        variant: "destructive",
+                                      });
+                                    }
+                                  }}
+                                >
+                                  <FileText className="w-4 h-4 mr-2" />
+                                  View QPRO Analysis
+                                </DropdownMenuItem>
+                              )}
+                              {canDelete && (
+                                <DropdownMenuItem
+                                  className="text-red-600 focus:text-red-600 focus:bg-red-50"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setDocumentToDelete(doc);
+                                  }}
+                                  disabled={deletingDocId === doc.id}
+                                >
+                                  <Trash2 className="w-4 h-4 mr-2" />
+                                  {deletingDocId === doc.id ? 'Deleting...' : 'Delete'}
+                                </DropdownMenuItem>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                        
+                        <div className="flex items-start gap-4 mb-4 mt-2">
+                          {isImageFile(doc.fileName || doc.title) && doc.fileUrl ? (
+                            <SecureThumbnail doc={doc} className="w-12 h-12 min-w-12 rounded-lg object-cover border border-gray-100 shrink-0" />
+                          ) : (
+                            <div className="w-12 h-12 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: iconBgColor }}>
+                              <FileIcon className="w-6 h-6" style={{ color: iconColor }} />
+                            </div>
                           )}
-                          <Button
-                            className="gap-2"
-                            size="sm"
-                            variant="ghost"
-                            style={{ color: '#2B4385', borderRadius: '8px' }}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (doc.id && doc.id !== 'undefined' && !doc.id.includes('undefined')) {
-                                router.push(`/repository/preview/${doc.id}`);
-                              } else {
-                                toast({
-                                  title: "Error",
-                                  description: "Cannot preview this document.",
-                                  variant: "destructive",
-                                });
-                              }
-                            }}
-                          >
-                            <EyeIcon className="w-4 h-4" />
-                            Preview
-                          </Button>
+                          <div className="flex-1 min-w-0 pr-6">
+                            <h4 className="text-[16px] font-semibold text-gray-900 line-clamp-2 mb-1">{toTitleCase(doc.title)}</h4>
+                            <p className="text-xs text-gray-500 mb-2">{doc.createdAt ? new Date(doc.createdAt).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "-"} • {formatFileSize(doc.fileSize)}</p>
+                          </div>
+                        </div>
+                        
+                        <p className="text-sm text-gray-500 line-clamp-2 mb-4 flex-1">{doc.description}</p>
+                        
+                        <div className="flex flex-wrap gap-2 mb-4">
+                          {!unitFilter && doc.unit && (
+                            <span 
+                              className="px-2.5 py-1 text-[11px] font-medium rounded-full"
+                              style={{ backgroundColor: 'rgba(43, 67, 133, 0.1)', color: '#2B4385' }}
+                            >
+                              {doc.unit.code || doc.unit.name}
+                            </span>
+                          )}
+                          
+                        </div>
+                        
+                        <div className="pt-3 border-t border-gray-100 mt-auto flex justify-between items-center text-xs text-gray-400">
+                          <span>{doc.uploadedBy}</span>
+                          <div className="flex items-center gap-3">
+                            <span className="flex items-center gap-1"><Download className="w-3 h-3" /> {doc.downloadsCount}</span>
+                            <span className="flex items-center gap-1"><Eye className="w-3 h-3" /> {doc.viewsCount}</span>
+                          </div>
                         </div>
                       </div>
                     </div>
                   );
                 })}
               </div>
+              )}
               
               {/* Empty State */}
               {documents.length === 0 && !loading && (
@@ -1172,4 +1391,6 @@ export default function RepositoryPage() {
     </ClientOnly>
   )
 }
+
+
 
