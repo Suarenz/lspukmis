@@ -12,8 +12,9 @@ datasource db {
 model User {
   id              String               @id @default(dbgenerated("gen_random_uuid()"))
   email           String               @unique
- name            String
- unitId          String?              @map("unitId")
+  name            String
+  idNumber        String?              @unique
+  unitId          String?              @map("unitId")
   avatar          String?
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
@@ -25,6 +26,7 @@ model User {
   permissions     DocumentPermission[]
   views           DocumentView[]
   documents       Document[]
+  documentRequests DocumentRequest[]
   qproAnalyses    QPROAnalysis[]       // QPRO analyses created by this user
   unitPermissions UnitPermission[]
   userUnit        Unit?                @relation("UserUnit", fields: [unitId], references: [id])
@@ -68,6 +70,7 @@ model Document {
   comments                 DocumentComment[]
   downloads                DocumentDownload[]
   permissions              DocumentPermission[]
+  requests                 DocumentRequest[]
   views                    DocumentView[]
   qproAnalyses             QPROAnalysis[]       // QPRO analyses associated with this document
   kpiContributions         KPIContribution[]    // KPI contributions from this document
@@ -198,6 +201,13 @@ enum UserRole {
   FACULTY
   STUDENT
   EXTERNAL
+  PERSONNEL
+}
+
+enum DocumentRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 enum DocumentStatus {
@@ -368,4 +378,23 @@ model KPITarget {
   @@index([initiative_id])
   @@index([year])
   @@map("kpi_targets")
+}
+
+model DocumentRequest {
+  id          String   @id @default(cuid())
+  documentId  String
+  userId      String
+  type        String   // PREVIEW, DOWNLOAD
+  status      DocumentRequestStatus @default(PENDING)
+  token       String?  // The access token, set when APPROVED
+  reason      String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@index([userId])
+  @@map("document_requests")
 }

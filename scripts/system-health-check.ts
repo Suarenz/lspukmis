@@ -126,8 +126,8 @@ async function checkDatabaseSchema() {
     // Check QPRO table separately (might not exist in older schemas)
     try {
       checksRun++;
-      if (prisma.qproAnalysis) {
-        await prisma.qproAnalysis.findFirst();
+      if (prisma.qPROAnalysis) {
+        await prisma.qPROAnalysis.findFirst();
         success('QproAnalysis table exists and accessible');
         checksPassed++;
       } else {

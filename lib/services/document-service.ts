@@ -87,21 +87,31 @@ class DocumentService {
     if (userId) {
       const user = await this.findUserById(userId);
 
-      if (user && user.role !== 'ADMIN' && user.role !== 'FACULTY') {
-        // For non-admin and non-faculty users, we need to check document permissions
-        const permissionCondition = {
-          OR: [
-            { uploadedById: user.id }, // Allow access to user's own documents (using db ID)
-            { permissions: { some: { userId: user.id, permission: { in: ['READ', 'WRITE', 'ADMIN'] } } } } // Documents with explicit permissions
-          ]
-        };
+      if (user && user.role !== 'ADMIN') {
+        let permissionCondition;
+        
+        if (user.role === 'FACULTY' || user.role === 'PERSONNEL') {
+          permissionCondition = {
+            OR: [
+              { uploadedById: user.id },
+              { unitId: user.unitId || 'NO_UNIT' },
+              { permissions: { some: { userId: user.id, permission: { in: ['READ', 'WRITE', 'ADMIN'] } } } }
+            ]
+          };
+        } else {
+          permissionCondition = {
+            OR: [
+              { uploadedById: user.id }, 
+              { permissions: { some: { userId: user.id, permission: { in: ['READ', 'WRITE', 'ADMIN'] } } } } 
+            ]
+          };
+        }
 
         // If we already have conditions in whereClause, wrap everything in AND
-        if (Object.keys(whereClause).length > 1) { // More than just status
+        if (Object.keys(whereClause).length > 1 || whereClause.AND) {
           whereClause.AND = whereClause.AND || [];
           whereClause.AND.push(permissionCondition);
         } else {
-          // If no other conditions exist, just add the permission condition
           Object.assign(whereClause, permissionCondition);
         }
       }
@@ -179,24 +189,32 @@ class DocumentService {
       if (userId) {
         const user = await this.findUserById(userId);
 
-        if (user && user.role !== 'ADMIN' && user.role !== 'FACULTY') {
-          // Check if user has explicit permission for this document
-          const permission = await prisma.documentPermission.findFirst({
-            where: {
-              documentId: id,
-              userId: user.id, // Use the database user ID
-              permission: { in: ['READ', 'WRITE', 'ADMIN'] }, // User needs at least READ permission
-            },
-          });
+          // For STUDENT or EXTERNAL roles
+          if (user && user.role !== 'ADMIN' && user.role !== 'FACULTY' && user.role !== 'PERSONNEL') {
+            // Check if user has explicit permission for this document
+            const permission = await prisma.documentPermission.findFirst({
+              where: {
+                documentId: id,
+                userId: user.id, // Use the database user ID
+                permission: { in: ['READ', 'WRITE', 'ADMIN'] }, // User needs at least READ permission
+              },
+            });
 
-          // Allow access if user has explicit READ/WRITE/ADMIN permission OR if user uploaded the document
-          if (!permission && document.uploadedById !== user.id) {
-            return null; // User doesn't have access
+            // Allow access if user has explicit READ/WRITE/ADMIN permission OR if user uploaded the document
+            if (!permission && document.uploadedById !== user.id) {
+              return null; // User doesn't have access
+            }
+          }
+          // For FACULTY and PERSONNEL roles
+          else if (user && (user.role === 'FACULTY' || user.role === 'PERSONNEL')) {
+            // They can only view documents uploaded by them OR belonging to their unit
+            if (document.uploadedById !== user.id && document.unitId !== user.unitId) {
+              return null; // Must use a DocumentRequest token to access
+            }
           }
         }
-      }
 
-      return {
+        return {
         ...document,
         tags: Array.isArray(document.tags) ?
           (document.tags as any[]).map(tag => String(tag)) :
@@ -1096,7 +1114,7 @@ class DocumentService {
 
       // Check if user has permission to comment (must have read access)
       // Allow admins and faculty to comment on any document
-      if (user.role !== 'ADMIN' && user.role !== 'FACULTY') {
+      if (user.role !== 'ADMIN' && user.role !== 'FACULTY' && user.role !== 'PERSONNEL') {
         const permission = await prisma.documentPermission.findFirst({
           where: {
             documentId,
@@ -1179,7 +1197,7 @@ class DocumentService {
       if (userId) {
         const user = await this.findUserById(userId);
 
-        if (user && user.role !== 'ADMIN' && user.role !== 'FACULTY') {
+        if (user && user.role !== 'ADMIN' && user.role !== 'FACULTY' && user.role !== 'PERSONNEL') {
           // Check if user has explicit permission for this document
           const permission = await prisma.documentPermission.findFirst({
             where: {

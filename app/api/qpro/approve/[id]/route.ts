@@ -33,9 +33,9 @@ export async function POST(
     console.log(`[Approve API] Approving analysis ${analysisId} by user ${user.email} (${user.role})`);
 
     // Check permissions - only ADMIN and FACULTY can approve
-    if (!['ADMIN', 'FACULTY'].includes(user.role)) {
+    if (!['ADMIN', 'FACULTY', 'PERSONNEL'].includes(user.role)) {
       return NextResponse.json(
-        { error: 'Insufficient permissions. Only ADMIN or FACULTY can approve analyses.' },
+        { error: 'Insufficient permissions. Only ADMIN, FACULTY, or PERSONNEL can approve analyses.' },
         { status: 403 }
       );
     }
@@ -435,9 +435,9 @@ export async function DELETE(
     const { id: analysisId } = await params;
 
     // Check permissions
-    if (!['ADMIN', 'FACULTY'].includes(user.role)) {
+    if (!['ADMIN', 'FACULTY', 'PERSONNEL'].includes(user.role)) {
       return NextResponse.json(
-        { error: 'Insufficient permissions. Only ADMIN or FACULTY can reject analyses.' },
+        { error: 'Insufficient permissions. Only ADMIN, FACULTY, or PERSONNEL can reject analyses.' },
         { status: 403 }
       );
     }

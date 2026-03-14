@@ -5,13 +5,14 @@ import { useRouter, useSearchParams } from "next/navigation"
 import AuthService from '@/lib/services/auth-service';
 
 import { useAuth } from "@/lib/auth-context"
+import { isAdmin, type UserRole } from "@/lib/utils/rbac"
 import { Navbar } from "@/components/navbar"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import type { Document, Unit } from "@/lib/api/types"
-import { Download, Eye, FileText, Filter, Upload, SearchIcon, EyeIcon, Trash2, CheckCircle, XCircle, Building2, ChevronLeft, ChevronRight, MoreVertical, FileSpreadsheet, FileImage, File, LayoutGrid, List } from "lucide-react"
+import { Download, Eye, FileText, Filter, Upload, SearchIcon, EyeIcon, Trash2, CheckCircle, XCircle, Building2, ChevronLeft, ChevronRight, MoreVertical, FileSpreadsheet, FileImage, File, LayoutGrid, List, Lock } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import Image from "next/image"
 import { ClientOnly } from "@/components/client-only-wrapper"
@@ -109,9 +110,11 @@ export default function RepositoryPage() {
   const [units, setUnits] = useState<Unit[]>([]); // NEW: Units for unit filtering
  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
-  
-// Determine if user can upload (roles are uppercase as per database enum)
-  const canUpload = user?.role === "ADMIN" || user?.role === "FACULTY"
+  const [pendingRequestDoc, setPendingRequestDoc] = useState<Document | null>(null);
+  const [showRequestDialog, setShowRequestDialog] = useState(false);
+  const [requestReason, setRequestReason] = useState("");
+  const [submittingRequest, setSubmittingRequest] = useState(false);
+  const canUpload = user?.role === "ADMIN" || user?.role === "FACULTY" || user?.role === "PERSONNEL"
   
   // Reset upload progress when modal is closed
   useEffect(() => {
@@ -375,7 +378,7 @@ export default function RepositoryPage() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
-          <div className="w-16 h-16 flex items-center justify-center mx-auto mb-4 overflow-hidden rounded-full bg-white shadow-sm border border-gray-100">
+          <div className="w-16 h-16 flex items-center justify-center mx-auto mb-4 overflow-hidden">
             <Image
               src="/LSPULogo.png"
               alt="LSPU Logo"
@@ -395,7 +398,7 @@ export default function RepositoryPage() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
-          <div className="w-16 h-16 flex items-center justify-center mx-auto mb-4 overflow-hidden rounded-full bg-white shadow-sm border border-gray-100">
+          <div className="w-16 h-16 flex items-center justify-center mx-auto mb-4 overflow-hidden">
             <Image
               src="/LSPULogo.png"
               alt="LSPU Logo"
@@ -415,7 +418,7 @@ export default function RepositoryPage() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
-          <div className="w-16 h-16 flex items-center justify-center mx-auto mb-4 overflow-hidden rounded-full bg-white shadow-sm border border-gray-100">
+          <div className="w-16 h-16 flex items-center justify-center mx-auto mb-4 overflow-hidden">
             <Image
               src="/LSPULogo.png"
               alt="LSPU Logo"
@@ -434,6 +437,40 @@ export default function RepositoryPage() {
   
   // NEW: Use all units since there's no status property
   const activeUnits = units;
+
+  const submitAccessRequest = async () => {
+    if (!pendingRequestDoc) return;
+    if (!requestReason.trim()) {
+      toast({ title: 'Error', description: 'Please provide a reason for requesting access.', variant: 'destructive' });
+      return;
+    }
+    setSubmittingRequest(true);
+    try {
+      const token = await AuthService.getAccessToken();
+      const res = await fetch('/api/document-requests', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ documentId: pendingRequestDoc.id, type: 'VIEW', reason: requestReason })
+      });
+      if (res.ok) {
+        toast({ title: 'Success', description: `Access request for "${pendingRequestDoc.title}" submitted successfully.` });
+        setShowRequestDialog(false);
+        setRequestReason("");
+        setPendingRequestDoc(null);
+      } else {
+        const error = await res.json();
+        toast({ title: 'Error', description: error.error || 'Failed to submit request.', variant: 'destructive' });
+      }
+    } catch (err) {
+      console.error(err);
+      toast({ title: 'Error', description: 'Failed to submit request.', variant: 'destructive' });
+    } finally {
+      setSubmittingRequest(false);
+    }
+  };
 
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return bytes + " B"
@@ -481,7 +518,7 @@ export default function RepositoryPage() {
         <Navbar />
         <div className="flex">
           {/* Unit Sidebar */}
-          {sidebarOpen && (
+          {sidebarOpen && isAdmin(user?.role as UserRole) && (
             <div className="w-64 border-r bg-muted/10 hidden lg:block">
               <UnitSidebar
                 units={activeUnits}
@@ -521,14 +558,16 @@ export default function RepositoryPage() {
                 </div>
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                   <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="lg:hidden"
-                      onClick={() => setSidebarOpen(!sidebarOpen)}
-                    >
-                      {sidebarOpen ? <ChevronLeft className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
-                    </Button>
+                    {isAdmin(user?.role as UserRole) && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="lg:hidden"
+                        onClick={() => setSidebarOpen(!sidebarOpen)}
+                      >
+                        {sidebarOpen ? <ChevronLeft className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
+                      </Button>
+                    )}
                     <div>
                       <h1 className="text-3xl md:text-4xl font-bold mb-2" style={{ color: '#2B4385' }}>Knowledge Repository</h1>
                       <p className="text-gray-500">Browse and access institutional knowledge resources</p>
@@ -590,23 +629,25 @@ export default function RepositoryPage() {
                       ))}
                     </SelectContent>
                   </Select>
-                  <Select
-                    value={unitFilter || "all"}
-                    onValueChange={(value) => setUnitFilter(value === "all" ? null : value)}
-                  >
-                    <SelectTrigger className="h-8 rounded-full bg-white border-dashed text-xs w-auto px-3 py-1 shadow-sm gap-2">
-                      <Building2 className="w-3 h-3 text-gray-500" />
-                      <SelectValue placeholder="All Units" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Units</SelectItem>
-                      {activeUnits.map((dept) => (
-                        <SelectItem key={dept.id} value={dept.id}>
-                          {dept.code} - {dept.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  {isAdmin(user?.role as UserRole) && (
+                    <Select
+                      value={unitFilter || "all"}
+                      onValueChange={(value) => setUnitFilter(value === "all" ? null : value)}
+                    >
+                      <SelectTrigger className="h-8 rounded-full bg-white border-dashed text-xs w-auto px-3 py-1 shadow-sm gap-2">
+                        <Building2 className="w-3 h-3 text-gray-500" />
+                        <SelectValue placeholder="All Units" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Units</SelectItem>
+                        {activeUnits.map((dept) => (
+                          <SelectItem key={dept.id} value={dept.id}>
+                            {dept.code} - {dept.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                 </div>
               </div>
               
@@ -628,12 +669,17 @@ export default function RepositoryPage() {
                         {documents.map((doc, index) => {
                           const { icon: FileIcon, color: iconColor, bgColor: iconBgColor } = getFileIcon(doc.fileName || doc.title);
                           const canDelete = user && (user.role === 'ADMIN' || doc.uploadedById === user.id);
-                          
+                          const hasAccess = user && (user.role === 'ADMIN' || user.role === 'STUDENT' || doc.uploadedById === user.id || user.unitId === doc.unitId);
+
                           return (
-                            <tr 
-                              key={doc.id} 
-                              className="hover:bg-gray-50/50 transition-colors group cursor-pointer" 
+                            <tr
+                              key={doc.id}
+                              className="hover:bg-gray-50/50 transition-colors group cursor-pointer"
                               onClick={() => {
+                                if (!hasAccess) {
+                                  toast({ title: 'Access Denied', description: 'Please request access to view this document.' });
+                                  return;
+                                }
                                 if (doc.id && doc.id !== 'undefined' && !doc.id.includes('undefined')) {
                                   router.push(`/repository/preview/${doc.id}`);
                                 }
@@ -671,9 +717,20 @@ export default function RepositoryPage() {
                                     </Button>
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end">
-                                    <DropdownMenuItem onClick={async (e) => {
-                                      e.stopPropagation();
-                                      setDownloadingDocId(doc.id);
+                                    {!hasAccess ? (
+                                      <DropdownMenuItem onClick={(e) => {
+                                        e.stopPropagation();
+                                        setPendingRequestDoc(doc);
+                                        setShowRequestDialog(true);
+                                      }}>
+                                        <Lock className="w-4 h-4 mr-2" />
+                                        Request Access
+                                      </DropdownMenuItem>
+                                    ) : (
+                                      <>
+                                        <DropdownMenuItem onClick={async (e) => {
+                                          e.stopPropagation();
+                                          setDownloadingDocId(doc.id);
                                       try {
                                         if (!isAuthenticated || !user) return;
                                         const downloadToken = await AuthService.getAccessToken();
@@ -773,6 +830,8 @@ export default function RepositoryPage() {
                                         {deletingDocId === doc.id ? 'Deleting...' : 'Delete'}
                                       </DropdownMenuItem>
                                     )}
+                                    </>
+                                    )}
                                   </DropdownMenuContent>
                                 </DropdownMenu>
                               </td>
@@ -790,17 +849,22 @@ export default function RepositoryPage() {
                 {documents.map((doc, index) => {
                   const { icon: FileIcon, color: iconColor, bgColor: iconBgColor } = getFileIcon(doc.fileName || doc.title);
                   const canDelete = user && (user.role === 'ADMIN' || doc.uploadedById === user.id);
-                  
+                  const hasAccess = user && (user.role === 'ADMIN' || user.role === 'STUDENT' || doc.uploadedById === user.id || user.unitId === doc.unitId);
+
                   return (
                     <div
                       key={doc.id}
                       className="animate-fade-in bg-white rounded-xl overflow-hidden transition-all duration-200 hover:border-gray-300 group flex flex-col cursor-pointer border border-transparent"
-                      style={{ 
+                      style={{
                         animationDelay: `${index * 0.05}s`,
                         boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
                         border: '1px solid #e5e7eb',
                       }}
                       onClick={() => {
+                        if (!hasAccess) {
+                          toast({ title: 'Access Denied', description: 'Please request access to view this document.' });
+                          return;
+                        }
                         if (doc.id && doc.id !== 'undefined' && !doc.id.includes('undefined')) {
                           router.push(`/repository/preview/${doc.id}`);
                         } else {
@@ -814,7 +878,6 @@ export default function RepositoryPage() {
                     >
                       {/* Card Header */}
                       <div className="p-4 flex-1 flex flex-col relative">
-                        {/* More Menu inside card top right */}
                         <div className="absolute top-4 right-4 z-10" onClick={(e) => e.stopPropagation()}>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -823,11 +886,22 @@ export default function RepositoryPage() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={async (e) => {
-                                e.stopPropagation();
-                                setDownloadingDocId(doc.id);
-                                try {
-                                  if (!isAuthenticated || !user) return;
+                              {!hasAccess ? (
+                                <DropdownMenuItem onClick={async (e) => {
+                                  e.stopPropagation();
+                                  setPendingRequestDoc(doc);
+                                  setShowRequestDialog(true);
+                                }}>
+                                  <Lock className="w-4 h-4 mr-2 text-yellow-500" />
+                                  Request Access
+                                </DropdownMenuItem>
+                              ) : (
+                                <>
+                                  <DropdownMenuItem onClick={async (e) => {
+                                    e.stopPropagation();
+                                    setDownloadingDocId(doc.id);
+                                    try {
+                                      if (!isAuthenticated || !user) return;
                                   const downloadToken = await AuthService.getAccessToken();
                                   if (!downloadToken) {
                                     await AuthService.logout();
@@ -916,6 +990,8 @@ export default function RepositoryPage() {
                                   <Trash2 className="w-4 h-4 mr-2" />
                                   {deletingDocId === doc.id ? 'Deleting...' : 'Delete'}
                                 </DropdownMenuItem>
+                              )}
+                              </>
                               )}
                             </DropdownMenuContent>
                           </DropdownMenu>
@@ -1252,21 +1328,29 @@ export default function RepositoryPage() {
                     />
                   </div>
                   
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Unit (Optional)</label>
-                    <select
-                      name="unitId"
-                      className="w-full p-2 border-input rounded-md bg-background"
-                      defaultValue=""
-                    >
-                      <option value="">Select a unit (or leave blank for unassigned)</option>
-                      {units.map((unit) => (
-                        <option key={unit.id} value={unit.id}>
-                          {unit.code} - {unit.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  {user?.role === 'ADMIN' ? (
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Unit (Optional)</label>
+                      <select
+                        name="unitId"
+                        className="w-full p-2 border-input rounded-md bg-background"
+                        defaultValue=""
+                      >
+                        <option value="">Select a unit (or leave blank for unassigned)</option>
+                        {units.map((unit) => (
+                          <option key={unit.id} value={unit.id}>
+                            {unit.code} - {unit.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <>
+                      {user?.unitId && (
+                        <input type="hidden" name="unitId" value={user.unitId} />
+                      )}
+                    </>
+                  )}
                 </div>
                 
                 <div className="flex gap-2 mt-6">
@@ -1387,6 +1471,48 @@ export default function RepositoryPage() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        <Dialog open={showRequestDialog} onOpenChange={setShowRequestDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Request Access to Document</DialogTitle>
+              <DialogDescription>
+                Please provide a reason for requesting access to <strong>{pendingRequestDoc?.title}</strong>. This request will be reviewed by an administrator.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-4">
+              <label htmlFor="reason" className="block text-sm font-medium mb-2">Reason for access:</label>
+              <textarea
+                id="reason"
+                className="w-full min-h-[100px] p-3 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-[#2B4385]/20 focus:border-[#2B4385]/50 transition-all resize-none"
+                placeholder="Briefly explain why you need access to this document..."
+                value={requestReason}
+                onChange={(e) => setRequestReason(e.target.value)}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowRequestDialog(false);
+                  setRequestReason("");
+                  setPendingRequestDoc(null);
+                }}
+                disabled={submittingRequest}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={submitAccessRequest}
+                disabled={!requestReason.trim() || submittingRequest}
+                style={{ backgroundColor: '#2B4385', color: 'white' }}
+              >
+                {submittingRequest ? "Submitting..." : "Submit Request"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
       </div>
     </ClientOnly>
   )

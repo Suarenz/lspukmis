@@ -104,7 +104,7 @@ export default function NewUnitPage() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
-          <div className="w-16 h-16 flex items-center justify-center mx-auto mb-4 overflow-hidden rounded-full bg-white shadow-sm border border-gray-100">
+          <div className="w-16 h-16 flex items-center justify-center mx-auto mb-4 overflow-hidden">
             <Image
               src="/LSPULogo.png"
               alt="LSPU Logo"
@@ -124,7 +124,7 @@ export default function NewUnitPage() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
-          <div className="w-16 h-16 flex items-center justify-center mx-auto mb-4 overflow-hidden rounded-full bg-white shadow-sm border border-gray-100">
+          <div className="w-16 h-16 flex items-center justify-center mx-auto mb-4 overflow-hidden">
             <Image
               src="/LSPULogo.png"
               alt="LSPU Logo"
@@ -144,7 +144,7 @@ export default function NewUnitPage() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
-          <div className="w-16 h-16 flex items-center justify-center mx-auto mb-4 overflow-hidden rounded-full bg-white shadow-sm border border-gray-100">
+          <div className="w-16 h-16 flex items-center justify-center mx-auto mb-4 overflow-hidden">
             <Image
               src="/LSPULogo.png"
               alt="LSPU Logo"

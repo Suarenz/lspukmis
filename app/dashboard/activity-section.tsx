@@ -181,7 +181,7 @@ export default function ActivitySection() {
   }
 
   return (
-    <Card className="border-0 bg-white h-full w-full max-h-[450px] overflow-hidden flex flex-col shadow-sm">
+    <Card className="border-0 bg-white h-full w-full max-h-[420px] overflow-hidden flex flex-col shadow-sm">
       <div className="px-6 py-4 border-b">
         <h2 className="text-lg font-semibold text-gray-900">Recent Activity</h2>
       </div>

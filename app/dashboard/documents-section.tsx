@@ -240,12 +240,12 @@ export default function DocumentsSection() {
                     
                     <div className="w-20 flex items-center justify-center gap-1.5 text-gray-600">
                       <Download className="w-3.5 h-3.5 text-[#2B4385]" />
-                      <span className="text-xs font-medium tabular-nums">{doc.downloadsCount || doc.downloads || 0}</span>
+                      <span className="text-xs font-medium tabular-nums">{(doc as any).downloadsCount || (doc as any).downloads || 0}</span>
                     </div>
 
                     <div className="w-20 flex items-center justify-center gap-1.5 text-gray-600">
                       <Eye className="w-3.5 h-3.5 text-[#2E8B57]" />
-                      <span className="text-xs font-medium tabular-nums">{doc.viewsCount || doc.views || 0}</span>
+                      <span className="text-xs font-medium tabular-nums">{(doc as any).viewsCount || (doc as any).views || 0}</span>
                     </div>
 
                     <div className="w-24 flex items-center justify-center">

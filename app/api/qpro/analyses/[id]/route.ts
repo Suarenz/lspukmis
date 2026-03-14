@@ -924,9 +924,9 @@ export async function PATCH(
     console.log(`[QPRO Analysis PATCH] Updating analysis: ${analysisId}`);
 
     // Check permissions - only ADMIN and FACULTY can edit
-    if (!['ADMIN', 'FACULTY'].includes(user.role)) {
+    if (!['ADMIN', 'FACULTY', 'PERSONNEL'].includes(user.role)) {
       return NextResponse.json(
-        { error: 'Insufficient permissions. Only ADMIN or FACULTY can edit analyses.' },
+        { error: 'Insufficient permissions. Only ADMIN, FACULTY, or PERSONNEL can edit analyses.' },
         { status: 403 }
       );
     }

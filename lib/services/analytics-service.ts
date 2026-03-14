@@ -157,6 +157,7 @@ class AnalyticsService {
         downloads: doc.downloadsCount || 0,
         views: doc.viewsCount || 0,
         version: doc.version,
+      fileName: doc.fileName || doc.title || "Unknown",
       }));
 
       // Get category distribution using a safer approach

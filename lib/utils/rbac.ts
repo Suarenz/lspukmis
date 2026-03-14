@@ -3,12 +3,13 @@
  * Defines role hierarchies and permission checks
  */
 
-export type UserRole = 'ADMIN' | 'FACULTY' | 'STUDENT' | 'EXTERNAL';
+export type UserRole = 'ADMIN' | 'FACULTY' | 'PERSONNEL' | 'STUDENT' | 'EXTERNAL';
 
-// Define role hierarchy - ADMIN has highest privileges, followed by FACULTY, STUDENT, then EXTERNAL
+// Define role hierarchy - ADMIN has highest privileges, followed by FACULTY/PERSONNEL, STUDENT, then EXTERNAL
 const ROLE_HIERARCHY: Record<UserRole, number> = {
   'ADMIN': 4,
   'FACULTY': 3,
+  'PERSONNEL': 3,
   'STUDENT': 2,
   'EXTERNAL': 1
 };
@@ -45,21 +46,21 @@ export function isAdmin(userRole: UserRole): boolean {
  * Check if user has faculty privileges
  */
 export function isFaculty(userRole: UserRole): boolean {
-  return userRole === 'FACULTY' || userRole === 'ADMIN';
+  return userRole === 'FACULTY' || userRole === 'PERSONNEL' || userRole === 'ADMIN';
 }
 
 /**
  * Check if user has student privileges
  */
 export function isStudent(userRole: UserRole): boolean {
-  return userRole === 'STUDENT' || userRole === 'FACULTY' || userRole === 'ADMIN';
+  return userRole === 'STUDENT' || userRole === 'FACULTY' || userRole === 'PERSONNEL' || userRole === 'ADMIN';
 }
 
 /**
  * Check if user has external privileges
  */
 export function isExternal(userRole: UserRole): boolean {
-  return userRole === 'EXTERNAL' || userRole === 'STUDENT' || userRole === 'FACULTY' || userRole === 'ADMIN';
+  return userRole === 'EXTERNAL' || userRole === 'STUDENT' || userRole === 'FACULTY' || userRole === 'PERSONNEL' || userRole === 'ADMIN';
 }
 
 /**
@@ -85,6 +86,7 @@ export function getAllowedActions(userRole: UserRole): string[] {
         'VIEW_ANALYTICS'
       ];
     case 'FACULTY':
+    case 'PERSONNEL':
       return [
         'CREATE_DOCUMENT',
         'READ_DOCUMENT',

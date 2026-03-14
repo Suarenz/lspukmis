@@ -55,10 +55,14 @@ export default function DashboardPage() {
   const router = useRouter()
 
   useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      router.push("/");
+    if (!isLoading) {
+      if (!isAuthenticated) {
+        router.push("/");
+      } else if (user?.role === "STUDENT") {
+        router.push("/repository");
+      }
     }
-  }, [isAuthenticated, isLoading, router])
+  }, [isAuthenticated, isLoading, user, router])
 
   // Redirect immediately if not authenticated
   if (!isAuthenticated) {
@@ -101,20 +105,25 @@ export default function DashboardPage() {
           </div>
 
           {/* Stats Grid - Critical section, loaded immediately */}
-          <div className="mb-6">
+          {user?.role === "ADMIN" && (
+            <div className="mb-6">
+              <Suspense fallback={<SectionLoader />}>
+                <StatsSection />
+              </Suspense>
+            </div>
+          )}
+
+          {/* Unit Leaderboard & Strategic Insights Grid (Moved to top) */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
             <Suspense fallback={<SectionLoader />}>
-              <StatsSection />
+              <UnitLeaderboard />
+            </Suspense>
+            <Suspense fallback={<SectionLoader />}>
+              <StrategicInsightsFeed />
             </Suspense>
           </div>
 
-          {/* Charts - Data Visualization */}
-          <div className="mb-6">
-            <Suspense fallback={<SectionLoader />}>
-              <ChartsSection />
-            </Suspense>
-          </div>
-
-          {/* Radar Chart & Activity - grid layout matching user request */}
+          {/* KRA Radar Chart & Activity (Moved up) */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
             <div className="lg:col-span-1">
               <Suspense fallback={<SectionLoader />}>
@@ -128,25 +137,21 @@ export default function DashboardPage() {
             </div>
           </div>
 
+          {/* Charts - Data Visualization (Moved down) */}
+          <div className="mb-6">
+            <Suspense fallback={<SectionLoader />}>
+              <ChartsSection />
+            </Suspense>
+          </div>
+
           {/* Recent Documents Table View */}
           <div className="mb-6">
              <Suspense fallback={<SectionLoader />}>
                <DocumentsSection />
              </Suspense>
           </div>
-
-          {/* Leaderboard and Insights Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-            <Suspense fallback={<SectionLoader />}>
-              <UnitLeaderboard />
-            </Suspense>
-            <Suspense fallback={<SectionLoader />}>
-              <StrategicInsightsFeed />
-            </Suspense>
-          </div>
         </main>
       </div>
     </ClientOnly>
- )
+  );
 }
-

@@ -75,13 +75,16 @@ export function Navbar() {
       </nav>
     );
   }
+  const showDashboard = user?.role !== "STUDENT"
+
   const navigation = [
-    { name: "Dashboard", href: "/dashboard", icon: Home },
+    ...(showDashboard ? [{ name: "Dashboard", href: "/dashboard", icon: Home }] : []),
     { name: "Repository", href: "/repository", icon: File },
     { name: "Search", href: "/search", icon: Search },
-    ...(user?.role === "ADMIN" || user?.role === "FACULTY"
+    ...(user?.role === "ADMIN" || user?.role === "FACULTY" || user?.role === "PERSONNEL"
       ? [
-          { name: "QPRO", href: "/qpro", icon: ClipboardCheck }
+          { name: "QPRO", href: "/qpro", icon: ClipboardCheck },
+          { name: "Requests", href: "/requests", icon: MessageSquare }
         ]
       : []),
   ]
@@ -155,13 +158,13 @@ export function Navbar() {
                     <UserRound className="w-4 h-4" />
                   </AvatarFallback>
                 </Avatar>
-                <span className="hidden sm:inline text-sm text-gray-700">{user?.name}</span>
+                <span className="hidden sm:inline text-sm text-gray-700">{user?.role === "ADMIN" ? "Admin" : user?.name}</span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuLabel>
                 <div className="flex flex-col gap-1">
-                  <div className="font-medium text-gray-900">{user?.name}</div>
+                  <div className="font-medium text-gray-900">{user?.role === "ADMIN" ? "Admin" : user?.name}</div>
                   <div className="text-xs text-gray-500">{user?.email}</div>
                   <div className="text-xs text-gray-500 capitalize">Role: {user?.role}</div>
                 </div>

@@ -119,7 +119,7 @@ export function StrategicInsightsFeed() {
   }
 
   return (
-    <Card className="h-full flex flex-col">
+    <Card className="h-full w-full max-h-[400px] flex flex-col">
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2">
           <Lightbulb className="w-5 h-5 text-amber-500" />

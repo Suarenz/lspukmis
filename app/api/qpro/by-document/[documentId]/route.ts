@@ -53,7 +53,7 @@ export async function GET(
     }
 
     // Check authorization - user must be ADMIN, FACULTY, or the uploader
-    if (user.role !== 'ADMIN' && user.role !== 'FACULTY' && analysis.uploadedById !== user.id) {
+    if (user.role !== 'ADMIN' && user.role !== 'FACULTY' && user.role !== 'PERSONNEL' && analysis.uploadedById !== user.id) {
       return NextResponse.json(
         { error: 'Unauthorized to view this analysis' },
         { status: 403 }

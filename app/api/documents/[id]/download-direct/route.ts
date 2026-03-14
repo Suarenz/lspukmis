@@ -4,6 +4,7 @@ import documentService from '@/lib/services/document-service';
 import { requireAuth } from '@/lib/middleware/auth-middleware';
 import fileStorageService from '@/lib/services/file-storage-service';
 import jwtService from '@/lib/services/jwt-service';
+import prisma from '@/lib/prisma';
 
 export async function GET(
   request: NextRequest,
@@ -23,19 +24,41 @@ export async function GET(
       );
     }
 
-    // Verify the token manually since we're not using the header
-    const decoded = await jwtService.verifyToken(token);
-    if (!decoded || !decoded.userId) {
+    let userId: string | undefined;
+    let document: any;
+    let bypassAccessCheck = false;
+
+    // First try JWT token
+    const decoded = await jwtService.verifyToken(token).catch(() => null);
+    
+    if (decoded && decoded.userId) {
+      userId = decoded.userId;
+      // Get document using the document service to check permissions
+      document = await documentService.getDocumentById(id, userId);
+    } else {
+      // Try DocumentRequest access token
+      const docRequest = await prisma.documentRequest.findFirst({
+        where: {
+          token: token,
+          documentId: id,
+          status: 'APPROVED'
+        },
+        include: { document: true }
+      });
+      
+      if (docRequest) {
+        userId = docRequest.userId;
+        document = docRequest.document;
+        bypassAccessCheck = true;
+      }
+    }
+
+    if (!userId) {
       return NextResponse.json(
         { error: 'Invalid or expired token' },
         { status: 401 }
       );
     }
-
-    const userId = decoded.userId;
-
-    // Get document using the document service to check permissions
-    const document = await documentService.getDocumentById(id, userId);
 
     if (!document) {
       return NextResponse.json(
@@ -44,8 +67,8 @@ export async function GET(
       );
     }
 
-    // Record the download
-    await documentService.recordDownload(id, userId);
+    // Record the download (requires userId)
+    await documentService.recordDownload(document.id, userId);
 
     // Use blobName if available (stored for QPRO and repository uploads), otherwise extract from URL
     let blobName = document.blobName;
@@ -58,7 +81,7 @@ export async function GET(
       const urlParts = urlWithoutParams.split('/'); // ['https:', '', 'account.blob.core.windows.net', 'container', 'path', 'to', 'blob']
       
       // Find container name (after the domain)
-      const containerIndex = urlParts.findIndex((part, idx) => idx >= 3 && part && !part.includes('.'));
+      const containerIndex = urlParts.findIndex((part: string, idx: number) => idx >= 3 && part && !part.includes('.'));
       
       if (containerIndex !== -1 && containerIndex < urlParts.length - 1) {
         // Everything after the container name is the blob path

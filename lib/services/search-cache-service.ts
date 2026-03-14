@@ -178,7 +178,7 @@ class SearchCacheService {
   async clearCache(): Promise<void> {
     const keys = await redisService.keys('search:*');
     if (keys.length > 0) {
-      await redisService.redis.del(...keys);
+      await redisService.redis.del(keys as any);
     }
  }
 
@@ -198,7 +198,7 @@ class SearchCacheService {
     const pattern = `*${queryPattern.toLowerCase()}*`;
     const keys = await redisService.keys(pattern);
     if (keys.length > 0) {
-      await redisService.redis.del(...keys);
+      await redisService.redis.del(keys as any);
     }
  }
 

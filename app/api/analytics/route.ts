@@ -161,7 +161,7 @@ export async function GET(request: NextRequest) {
         downloads: downloadsThisWeek - downloadsLastWeek,
         views: viewsThisWeek - viewsLastWeek,
       };
-    } else if (user.role === 'FACULTY') {
+    } else if (user.role === 'FACULTY' || user.role === 'PERSONNEL') {
       // Faculty can see their unit's stats
       const userWithUnit = await prisma.user.findUnique({
         where: { id: user.id },

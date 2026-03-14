@@ -47,7 +47,7 @@ export async function PUT(
     const { id } = await params;
 
     // Verify authentication and check role
-    const authResult = await requireAuth(request, ['ADMIN', 'FACULTY']);
+    const authResult = await requireAuth(request, ['ADMIN', 'FACULTY', 'PERSONNEL']);
     if ('status' in authResult) { // Check if it's a NextResponse (error case)
       return authResult;
     }
@@ -117,7 +117,7 @@ export async function DELETE(
       );
     }
 
-    const hasPermission = user.role === 'ADMIN' || user.role === 'FACULTY' || document.uploadedById === userId;
+    const hasPermission = user.role === 'ADMIN' || user.role === 'FACULTY' || user.role === 'PERSONNEL' || document.uploadedById === userId;
     if (!hasPermission) {
       return NextResponse.json(
         { error: 'User does not have permission to delete this document' },

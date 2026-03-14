@@ -7,35 +7,47 @@ interface SignupRequestBody {
   email: string;
   password: string;
   name: string;
-  role?: 'ADMIN' | 'FACULTY' | 'STUDENT' | 'EXTERNAL';
+  idNumber: string;
+  unitId?: string;
+  role?: 'ADMIN' | 'FACULTY' | 'STUDENT' | 'EXTERNAL' | 'PERSONNEL';
   department?: string;
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body: SignupRequestBody = await request.json();
-    const { email, password, name, role = 'STUDENT', department } = body;
+    const { email, password, name, idNumber, unitId, role = 'STUDENT', department } = body;
 
     // Validate input
-    if (!email || !password || !name) {
+    if (!email || !password || !name || !idNumber) {
       return NextResponse.json(
-        { error: 'Email, password, and name are required' },
+        { error: 'Email, password, name, and ID Number are required' },
         { status: 400 }
       );
     }
 
     // Check if user already exists
-    const existingUser = await prisma.user.findUnique({
+    const existingUser = await prisma.user.findFirst({
       where: {
-        email: email,
+        OR: [
+          { email: email },
+          { idNumber: idNumber }
+        ]
       },
     });
 
     if (existingUser) {
-      return NextResponse.json(
-        { error: 'User with this email already exists' },
-        { status: 409 }
-      );
+      if (existingUser.email === email) {
+        return NextResponse.json(
+          { error: 'User with this email already exists' },
+          { status: 409 }
+        );
+      } else {
+        return NextResponse.json(
+          { error: 'User with this ID Number already exists' },
+          { status: 409 }
+        );
+      }
     }
 
     // Hash the password
@@ -46,6 +58,8 @@ export async function POST(request: NextRequest) {
       data: {
         email: email,
         name: name,
+        idNumber: idNumber,
+        unitId: unitId,
         role: role,
         password: hashedPassword,
       },

@@ -1,4 +1,4 @@
-export type UserRole = "ADMIN" | "FACULTY" | "STUDENT" | "EXTERNAL"
+export type UserRole = "ADMIN" | "FACULTY" | "STUDENT" | "EXTERNAL" | "PERSONNEL"
 
 export interface User {
   id: string
@@ -26,6 +26,7 @@ export interface Document {
   downloads: number
   views: number
   version: number
+  unitId?: string
 }
 
 

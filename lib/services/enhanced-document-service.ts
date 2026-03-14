@@ -79,22 +79,32 @@ class EnhancedDocumentService {
       // If not found by database ID, we just continue with the assumption that the user doesn't have access
       // The permission checks later will handle access control
 
-      if (user && user.role !== 'ADMIN' && user.role !== 'FACULTY') {
-        // For non-admin and non-faculty users, we need to check document permissions
-        // This is a simplified approach - in a real system, you'd have more complex permission logic
-        const permissionCondition = {
-          OR: [
-            { uploadedById: user.id }, // Allow access to user's own documents (using db ID)
-            { permissions: { some: { userId: user.id, permission: { in: ['READ', 'WRITE', 'ADMIN'] } } } }, // Documents with explicit permissions
-          ]
-        };
+      if (user && user.role !== 'ADMIN') {
+        let permissionCondition;
+        
+        if (user.role === 'FACULTY' || user.role === 'PERSONNEL') {
+          permissionCondition = {
+            OR: [
+              { uploadedById: user.id },
+              { unitId: user.unitId || 'NO_UNIT' }, // Allow access to documents in their unit
+              { permissions: { some: { userId: user.id, permission: { in: ['READ', 'WRITE', 'ADMIN'] } } } },
+            ]
+          };
+        } else {
+          // For STUDENT and EXTERNAL users
+          permissionCondition = {
+            OR: [
+              { uploadedById: user.id }, 
+              { permissions: { some: { userId: user.id, permission: { in: ['READ', 'WRITE', 'ADMIN'] } } } }, 
+            ]
+          };
+        }
 
         // If we already have conditions in whereClause, wrap everything in AND
-        if (Object.keys(whereClause).length > 1) { // More than just status
+        if (Object.keys(whereClause).length > 1 || whereClause.AND) {
           whereClause.AND = whereClause.AND || [];
           whereClause.AND.push(permissionCondition);
         } else {
-          // If no other conditions exist, just add the permission condition
           Object.assign(whereClause, permissionCondition);
         }
       }

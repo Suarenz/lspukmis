@@ -272,7 +272,7 @@ export default function SearchPage() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
-          <div className="w-16 h-16 flex items-center justify-center mx-auto mb-4 overflow-hidden rounded-full bg-white shadow-sm border border-gray-100">
+          <div className="w-16 h-16 flex items-center justify-center mx-auto mb-4 overflow-hidden">
             <Image
               src="/LSPULogo.png"
               alt="LSPU Logo"
@@ -444,7 +444,7 @@ export default function SearchPage() {
                                       Evidence from document:
                                     </div>
                                     {(() => {
-                                      const evidenceFromApi = (typeof window !== 'undefined' && window.__SEARCH_EVIDENCE__) ? window.__SEARCH_EVIDENCE__ : undefined;
+                                      const evidenceFromApi = (typeof window !== 'undefined' && (window as any).__SEARCH_EVIDENCE__) ? (window as any).__SEARCH_EVIDENCE__ : undefined;
                                       const evidence = evidenceFromApi || enhancedDoc?.evidence || (doc as any).evidence || enhancedDoc?.snippet || (doc as any).snippet || enhancedDoc?.extractedText || (doc as any).extractedText || (doc as any).content || doc.description || (doc as any).document?.description;
                                       const isMeaningfulText = evidence && 
                                         evidence.trim().length > 20 && 

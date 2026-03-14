@@ -36,9 +36,12 @@ export async function POST(request: NextRequest) {
 
     const file = formData.get('file') as File;
     const documentTitle = formData.get('documentTitle') as string;
-    const unitId = formData.get('unitId') as string | null;
+    const requestedUnitId = formData.get('unitId') as string | null;
     const year = parseInt(formData.get('year') as string) || 2025;
     const quarter = parseInt(formData.get('quarter') as string) || 1;
+
+    // Enforce unitId based on role
+    const unitId = user.role === 'ADMIN' ? requestedUnitId : user.unitId;
 
     // Debug logging
     console.log('[QPRO-WITH-AGGREGATION] Request received:', {

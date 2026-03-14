@@ -360,7 +360,7 @@ export default function ReviewQProModal({
         for (const kraId of kraIds) {
           const year = analysisData.year || new Date().getFullYear();
           const progressRes = await fetch(
-            `/api/kpi-progress?kraId=${encodeURIComponent(kraId)}&year=${year}`,
+            `/api/kpi-progress?kraId=${encodeURIComponent(kraId as string)}&year=${year}`,
             { headers: { Authorization: `Bearer ${token}` } }
           );
           
@@ -934,7 +934,7 @@ export default function ReviewQProModal({
       
       // Use the same aggregation logic as backend
       const aggregated = computeAggregatedAchievement({
-        targetType: meta.targetType || g.activities?.[0]?.targetType,
+        targetType: meta.targetType || (g.activities?.[0] as any)?.targetType,
         targetValue,
         targetScope: meta.targetScope,
         activities: g.activities.map(a => ({ reported: a.reported, target: a.target })),

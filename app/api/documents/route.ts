@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
   try {
     console.log('Starting document upload process...');
     // Verify authentication and check role
-    const authResult = await requireAuth(request, ['ADMIN', 'FACULTY']);
+    const authResult = await requireAuth(request, ['ADMIN', 'FACULTY', 'PERSONNEL']);
     if ('status' in authResult) { // Check if it's a NextResponse (error case)
       console.log('Authentication failed:', authResult);
       return authResult;

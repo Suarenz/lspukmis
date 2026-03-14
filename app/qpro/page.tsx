@@ -79,8 +79,8 @@ export default function QPROPage() {
     if (!authLoading && !isAuthenticated) {
       router.push("/")
     }
-    if (!authLoading && user && user.role !== "ADMIN" && user.role !== "FACULTY") {
-      router.push("/dashboard")
+    if (!authLoading && user && user.role !== "ADMIN" && user.role !== "FACULTY" && (user.role as string) !== "PERSONNEL") {
+      router.push("/repository")
     }
   }, [authLoading, isAuthenticated, user, router])
 
@@ -97,7 +97,7 @@ export default function QPROPage() {
     )
   }
 
-  if (!user || (user.role !== "ADMIN" && user.role !== "FACULTY")) {
+  if (!user || (user.role !== "ADMIN" && user.role !== "FACULTY" && (user.role as string) !== "PERSONNEL")) {
     return null
   }
 

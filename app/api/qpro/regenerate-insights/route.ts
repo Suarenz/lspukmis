@@ -270,7 +270,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check permissions
-    if (!['ADMIN', 'FACULTY'].includes(user.role)) {
+    if (!['ADMIN', 'FACULTY', 'PERSONNEL'].includes(user.role)) {
       return NextResponse.json(
         { error: 'Insufficient permissions to regenerate insights' },
         { status: 403 }

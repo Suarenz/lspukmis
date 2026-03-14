@@ -55,7 +55,7 @@ export interface User {
   id: string;
   email: string;
   name: string;
-  role: 'ADMIN' | 'FACULTY' | 'STUDENT' | 'EXTERNAL';
+  role: 'ADMIN' | 'FACULTY' | 'PERSONNEL' | 'STUDENT' | 'EXTERNAL';
   unit?: string;
   unitId?: string;  // NEW: Unit association
   avatar?: string;
