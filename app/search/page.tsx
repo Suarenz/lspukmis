@@ -7,8 +7,10 @@ import { Navbar } from "@/components/navbar"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { SearchIcon, FileText, TrendingUp, Eye } from "lucide-react"
+import { SearchIcon, FileText, TrendingUp, Eye, Lock } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Textarea } from "@/components/ui/textarea"
 import Image from "next/image"
 import AuthService from '@/lib/services/auth-service';
 import { Document } from '@/lib/api/types';
@@ -39,6 +41,13 @@ export default function SearchPage() {
   const [sources, setSources] = useState<any[]>([]);
   const [relevantDocumentUrl, setRelevantDocumentUrl] = useState<string | undefined>(undefined);
   const [noRelevantDocuments, setNoRelevantDocuments] = useState<boolean>(false);
+
+  // Access info for search result documents (from catalog endpoint)
+  const [docAccessMap, setDocAccessMap] = useState<Record<string, { hasAccess: boolean; hasPendingRequest: boolean }>>({});
+  const [requestDialogDocId, setRequestDialogDocId] = useState<string | null>(null);
+  const [requestDialogTitle, setRequestDialogTitle] = useState('');
+  const [requestReason, setRequestReason] = useState('');
+  const [submittingRequest, setSubmittingRequest] = useState(false);
 
   // Chat-with-file state
   const [attachedFile, setAttachedFile] = useState<AttachedFile | null>(null);
@@ -140,6 +149,7 @@ export default function SearchPage() {
   // Perform search — routes to either global search or chat-with-file query
   const performSearch = useCallback(async (query: string) => {
     if (!query.trim()) return;
+    setDocAccessMap({});
 
     setSearchQuery(query);
     setHasPerformedSearch(true);
@@ -241,6 +251,24 @@ export default function SearchPage() {
         }
 
         setSearchResults({ documents: documents || [] });
+
+        // Fetch access info for the returned documents (non-blocking)
+        if (documents && documents.length > 0) {
+          const ids = documents.map((d: any) => d.id || d.colivaraDocumentId).filter(Boolean).join(',');
+          if (ids) {
+            fetch(`/api/documents/catalog?ids=${encodeURIComponent(ids)}`, {
+              headers: { 'Authorization': `Bearer ${token}` },
+            }).then((r) => r.ok ? r.json() : null).then((data) => {
+              if (data?.documents) {
+                const map: Record<string, { hasAccess: boolean; hasPendingRequest: boolean }> = {};
+                for (const d of data.documents) {
+                  map[d.id] = { hasAccess: d.hasAccess, hasPendingRequest: d.hasPendingRequest };
+                }
+                setDocAccessMap(map);
+              }
+            }).catch(() => {/* non-critical */});
+          }
+        }
       }
     } catch (error) {
       console.error('Search error:', error);
@@ -267,6 +295,31 @@ export default function SearchPage() {
         'Find forms for faculty leave',
         'What are the strategic goals of LSPU?',
       ];
+
+  const submitAccessRequest = async () => {
+    if (!requestDialogDocId || !requestReason.trim()) return;
+    setSubmittingRequest(true);
+    try {
+      const token = await AuthService.getAccessToken();
+      const res = await fetch('/api/document-requests', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documentId: requestDialogDocId, type: 'VIEW', reason: requestReason }),
+      });
+      if (res.ok) {
+        setDocAccessMap((prev) => ({
+          ...prev,
+          [requestDialogDocId]: { hasAccess: false, hasPendingRequest: true },
+        }));
+        setRequestDialogDocId(null);
+        setRequestReason('');
+      }
+    } catch {
+      // noop — user sees no feedback but request may have gone through
+    } finally {
+      setSubmittingRequest(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -496,14 +549,40 @@ export default function SearchPage() {
                                       <span className="text-xs text-muted-foreground">Pages: {(enhancedDoc?.pageNumbers || (doc as any).pageNumbers).join(', ')}</span>
                                     )}
                                   </div>
-                                  <div className="mt-3 flex justify-end">
-                                    <Button variant="outline" size="sm" onClick={(e) => {
-                                      e.stopPropagation();
-                                      router.push(getDocumentUrl());
-                                    }}>
-                                      <Eye className="w-4 h-4 mr-1" />
-                                      {((doc as any).isQproDocument || enhancedDoc?.isQproDocument) ? 'View Analysis' : 'Preview'}
-                                    </Button>
+                                  <div className="mt-3 flex justify-end gap-2">
+                                    {(() => {
+                                      const accessInfo = docAccessMap[doc.id] ?? docAccessMap[(doc as any).colivaraDocumentId];
+                                      const isLocked = accessInfo && !accessInfo.hasAccess;
+                                      const isPending = accessInfo?.hasPendingRequest;
+                                      if (isLocked && isPending) {
+                                        return (
+                                          <span className="inline-flex items-center text-xs text-yellow-600 bg-yellow-50 border border-yellow-200 px-2.5 py-1 rounded-full">
+                                            <Lock className="w-3 h-3 mr-1" /> Pending review
+                                          </span>
+                                        );
+                                      }
+                                      if (isLocked) {
+                                        return (
+                                          <Button variant="outline" size="sm" onClick={(e) => {
+                                            e.stopPropagation();
+                                            setRequestDialogDocId(doc.id);
+                                            setRequestDialogTitle(cleanDocumentTitle(SuperMapper.getFieldValue(doc, 'title') || (doc as any).title || 'this document'));
+                                            setRequestReason('');
+                                          }}>
+                                            <Lock className="w-4 h-4 mr-1" /> Request Access
+                                          </Button>
+                                        );
+                                      }
+                                      return (
+                                        <Button variant="outline" size="sm" onClick={(e) => {
+                                          e.stopPropagation();
+                                          router.push(getDocumentUrl());
+                                        }}>
+                                          <Eye className="w-4 h-4 mr-1" />
+                                          {((doc as any).isQproDocument || enhancedDoc?.isQproDocument) ? 'View Analysis' : 'Preview'}
+                                        </Button>
+                                      );
+                                    })()}
                                   </div>
                                 </div>
                               </div>
@@ -539,6 +618,39 @@ export default function SearchPage() {
           </div>
         )}
       </main>
+
+      {/* Request Access Dialog */}
+      <Dialog open={!!requestDialogDocId} onOpenChange={(open) => { if (!open) { setRequestDialogDocId(null); setRequestReason(''); } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Request Access</DialogTitle>
+          </DialogHeader>
+          <div className="py-2">
+            <p className="text-sm text-gray-600 mb-3">
+              Requesting access to <strong>{requestDialogTitle}</strong>. Please provide a reason.
+            </p>
+            <Textarea
+              placeholder="Why do you need access to this document?"
+              value={requestReason}
+              onChange={(e) => setRequestReason(e.target.value)}
+              rows={3}
+              className="w-full"
+            />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => { setRequestDialogDocId(null); setRequestReason(''); }}>
+              Cancel
+            </Button>
+            <Button
+              disabled={!requestReason.trim() || submittingRequest}
+              onClick={submitAccessRequest}
+              style={{ backgroundColor: '#2B4385', color: 'white' }}
+            >
+              {submittingRequest ? 'Submitting...' : 'Submit Request'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

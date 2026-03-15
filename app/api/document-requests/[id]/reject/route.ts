@@ -21,6 +21,14 @@ export async function POST(
 
     const { id } = await params;
 
+    let rejectionReason: string | undefined;
+    try {
+      const body = await request.json();
+      rejectionReason = body?.reason?.trim() || undefined;
+    } catch {
+      // reason is optional, ignore parse errors
+    }
+
     const documentRequest = await prisma.documentRequest.findUnique({
       where: { id }
     });
@@ -36,9 +44,29 @@ export async function POST(
     const updatedRequest = await prisma.documentRequest.update({
       where: { id },
       data: {
-        status: 'REJECTED'
+        status: 'REJECTED',
+        ...(rejectionReason && { rejectionReason }),
       }
     });
+
+    // Notify the requester their request was rejected
+    try {
+      const doc = await prisma.document.findUnique({
+        where: { id: documentRequest.documentId },
+        select: { title: true },
+      });
+      const reasonSuffix = rejectionReason ? ` Reason: ${rejectionReason}` : '';
+      await prisma.notification.create({
+        data: {
+          userId: documentRequest.userId,
+          type: 'REQUEST_REJECTED',
+          message: `Your access request for "${doc?.title ?? 'a document'}" was rejected.${reasonSuffix}`,
+          relatedId: documentRequest.id,
+        },
+      });
+    } catch (notifError) {
+      console.error('Failed to create rejection notification:', notifError);
+    }
 
     return NextResponse.json(updatedRequest);
   } catch (error) {

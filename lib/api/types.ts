@@ -26,6 +26,7 @@ export interface Document {
   year?: number; // Reporting year (2025-2029) for QPRO documents
   quarter?: number; // Reporting quarter (1-4) for QPRO documents
   isQproDocument?: boolean; // Flag for QPRO documents
+  hasExplicitPermission?: boolean; // true if user has an explicit DocumentPermission record
   // Colivara-specific fields
   colivaraDocumentId?: string;
   colivaraProcessingStatus?: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
@@ -70,4 +71,28 @@ export interface Unit {
   description?: string;
   createdAt: Date;
   updatedAt: Date;
+}
+
+/** Metadata-only document returned by the public catalog endpoint.
+ *  Never exposes fileUrl or blobName. */
+export interface CatalogDocument {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  tags: string[];
+  fileName: string;
+  fileType: string;
+  fileSize: number;
+  uploadedAt: Date;
+  uploadedBy: string;
+  unitId: string | null;
+  unit: { id: string; name: string; code: string } | null;
+  year: number | null;
+  quarter: number | null;
+  isQproDocument: boolean;
+  /** True if the current user already has access (own doc, same unit, or explicit permission). */
+  hasAccess: boolean;
+  /** True if the current user has a PENDING request for this document. */
+  hasPendingRequest: boolean;
 }

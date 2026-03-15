@@ -34,35 +34,63 @@ export async function POST(
       return NextResponse.json({ error: `Request is already ${documentRequest.status}` }, { status: 400 });
     }
 
+    // Open requests (no documentId) must go through the fulfill endpoint,
+    // which lets the admin attach a document before approving.
+    if (!documentRequest.documentId) {
+      return NextResponse.json(
+        {
+          error:
+            'This is an open request with no document attached. Use "Fulfill & Approve" to upload or link a document first.',
+        },
+        { status: 400 },
+      );
+    }
+
     // Generate a secure access token
     const token = crypto.randomBytes(32).toString('hex');
+    const tokenExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
 
     const updatedRequest = await prisma.documentRequest.update({
       where: { id },
       data: {
         status: 'APPROVED',
-        token
+        token,
+        tokenExpiresAt,
       }
     });
 
     // Grant standard view/download access via DocumentPermission.
-    const existingPermission = await prisma.documentPermission.findUnique({
+    await prisma.documentPermission.upsert({
       where: {
         documentId_userId: {
           documentId: documentRequest.documentId,
-          userId: documentRequest.userId
-        }
-      }
+          userId: documentRequest.userId,
+        },
+      },
+      create: {
+        documentId: documentRequest.documentId,
+        userId: documentRequest.userId,
+        permission: 'READ',
+      },
+      update: {},
     });
 
-    if (!existingPermission) {
-      await prisma.documentPermission.create({
-        data: {
-          documentId: documentRequest.documentId,
-          userId: documentRequest.userId,
-          permission: 'READ'
-        }
+    // Notify the requester their request was approved
+    try {
+      const doc = await prisma.document.findUnique({
+        where: { id: documentRequest.documentId },
+        select: { title: true },
       });
+      await prisma.notification.create({
+        data: {
+          userId: documentRequest.userId,
+          type: 'REQUEST_APPROVED',
+          message: `Your access request for "${doc?.title ?? 'a document'}" has been approved. You can now download it from the Requests page.`,
+          relatedId: documentRequest.id,
+        },
+      });
+    } catch (notifError) {
+      console.error('Failed to create approval notification:', notifError);
     }
 
     return NextResponse.json(updatedRequest);

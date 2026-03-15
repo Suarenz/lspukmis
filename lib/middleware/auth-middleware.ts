@@ -41,8 +41,6 @@ export async function requireAuth(request: NextRequest, roles?: string[]): Promi
     }
  }
 
-  console.log('Decoded token:', decoded);
-
   // Check if decoded.userId is valid
   if (!decoded.userId) {
     console.error('Token does not contain userId:', decoded);

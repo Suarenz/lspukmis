@@ -27,6 +27,7 @@ model User {
   views           DocumentView[]
   documents       Document[]
   documentRequests DocumentRequest[]
+  notifications    Notification[]
   qproAnalyses    QPROAnalysis[]       // QPRO analyses created by this user
   unitPermissions UnitPermission[]
   userUnit        Unit?                @relation("UserUnit", fields: [unitId], references: [id])
@@ -208,6 +209,7 @@ enum DocumentRequestStatus {
   PENDING
   APPROVED
   REJECTED
+  REVOKED
 }
 
 enum DocumentStatus {
@@ -381,20 +383,42 @@ model KPITarget {
 }
 
 model DocumentRequest {
-  id          String   @id @default(cuid())
-  documentId  String
-  userId      String
-  type        String   // PREVIEW, DOWNLOAD
-  status      DocumentRequestStatus @default(PENDING)
-  token       String?  // The access token, set when APPROVED
-  reason      String?  @db.Text
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                     String   @id @default(cuid())
+  documentId             String?  // Nullable: null for open/undirected requests
+  userId                 String
+  type                   String   // PREVIEW, DOWNLOAD, OPEN
+  status                 DocumentRequestStatus @default(PENDING)
+  token                  String?  // The access token, set when APPROVED
+  reason                 String?  @db.Text
+  description            String?  @db.Text // For open requests: describes what document the user is looking for
+  documentType           String?  @db.Text // For open requests: category/type of document needed
+  supportingFileUrl      String?  // URL of requestor's uploaded supporting document
+  supportingFileBlobName String?  // Blob name for cleanup of requestor's supporting document
+  rejectionReason        String?  @db.Text
+  adminNote              String?  @db.Text // Admin note sent to requester on fulfill/approve/reject
+  tokenExpiresAt         DateTime?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 
-  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  document    Document? @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([documentId])
   @@index([userId])
   @@map("document_requests")
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String
+  message   String
+  relatedId String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([read])
+  @@map("notifications")
 }

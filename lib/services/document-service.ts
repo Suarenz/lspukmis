@@ -207,9 +207,19 @@ class DocumentService {
           }
           // For FACULTY and PERSONNEL roles
           else if (user && (user.role === 'FACULTY' || user.role === 'PERSONNEL')) {
-            // They can only view documents uploaded by them OR belonging to their unit
+            // They can view documents uploaded by them OR belonging to their unit
             if (document.uploadedById !== user.id && document.unitId !== user.unitId) {
-              return null; // Must use a DocumentRequest token to access
+              // Also allow if they have an explicit permission (e.g., from an approved document request)
+              const permission = await prisma.documentPermission.findFirst({
+                where: {
+                  documentId: id,
+                  userId: user.id,
+                  permission: { in: ['READ', 'WRITE', 'ADMIN'] },
+                },
+              });
+              if (!permission) {
+                return null; // No unit match, not the uploader, and no explicit permission
+              }
             }
           }
         }

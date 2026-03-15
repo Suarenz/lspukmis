@@ -120,6 +120,9 @@ class EnhancedDocumentService {
           include: {
             uploadedByUser: true,
             documentUnit: true,
+            permissions: userId ? {
+              where: { userId },
+            } : false,
           }
         }),
         prisma.document.count({ where: whereClause }),
@@ -153,6 +156,9 @@ class EnhancedDocumentService {
           colivaraProcessingStatus: doc.colivaraProcessingStatus as 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' ?? undefined,
           colivaraProcessedAt: doc.colivaraProcessedAt ? new Date(doc.colivaraProcessedAt) : undefined,
           colivaraChecksum: doc.colivaraChecksum ?? undefined,
+          hasExplicitPermission: userId
+            ? (doc.permissions?.length ?? 0) > 0
+            : undefined,
         })),
         total,
       };
@@ -191,7 +197,7 @@ class EnhancedDocumentService {
         // If not found by database ID, we just continue with the assumption that the user doesn't have access
         // The permission checks later will handle access control
 
-        if (user && user.role !== 'ADMIN' && user.role !== 'FACULTY') {
+        if (user && user.role !== 'ADMIN' && user.role !== 'FACULTY' && user.role !== 'PERSONNEL') {
           // Check if user has explicit permission for this document
           const permission = await prisma.documentPermission.findFirst({
             where: {
@@ -308,14 +314,14 @@ class EnhancedDocumentService {
       // If not found by database ID, we return null
       if (!user) {
         console.error('User not found with provided ID:', userId);
-        throw new Error('Only admins and faculty can upload documents');
+        throw new Error('User not found');
       }
       
       console.log('User lookup result:', { user: !!user, role: user?.role, id: user?.id });
 
-      if (!user || !['ADMIN', 'FACULTY'].includes(user.role)) {
+      if (!user || !['ADMIN', 'FACULTY', 'PERSONNEL'].includes(user.role)) {
         console.error('User does not have required role to upload documents:', user?.role);
-        throw new Error('Only admins and faculty can upload documents');
+        throw new Error('Only admins, faculty, and personnel can upload documents');
       }
 
       const document = await prisma.document.create({

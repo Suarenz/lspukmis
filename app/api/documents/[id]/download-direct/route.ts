@@ -47,6 +47,13 @@ export async function GET(
       });
       
       if (docRequest) {
+        // Check token expiry
+        if (docRequest.tokenExpiresAt && docRequest.tokenExpiresAt < new Date()) {
+          return NextResponse.json(
+            { error: 'Access token has expired. Please request access again.' },
+            { status: 410 }
+          );
+        }
         userId = docRequest.userId;
         document = docRequest.document;
         bypassAccessCheck = true;

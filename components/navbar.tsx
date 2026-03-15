@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useAuth } from "@/lib/auth-context"
@@ -14,7 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Menu, X, Search, MessageSquare, BarChart3, LogOut, UserRound, File, ClipboardCheck, Home, Plus } from "lucide-react"
+import { Menu, X, Search, MessageSquare, BarChart3, LogOut, UserRound, File, ClipboardCheck, Home, Plus, Bell } from "lucide-react"
 import Image from "next/image"
 import { cn } from "@/lib/utils"
 
@@ -22,6 +22,31 @@ export function Navbar() {
   const { user, logout, isLoading, isAuthenticated } = useAuth()
   const pathname = usePathname()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
+
+  useEffect(() => {
+    if (!isAuthenticated || !user) return;
+
+    const fetchUnread = async () => {
+      try {
+        const token = localStorage.getItem('access_token');
+        if (!token) return;
+        const res = await fetch('/api/notifications?unread=true', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setUnreadCount(data.unreadCount ?? 0);
+        }
+      } catch {
+        // silent fail
+      }
+    };
+
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 30000);
+    return () => clearInterval(interval);
+  }, [isAuthenticated, user]);
 
   // Don't render if user is not authenticated and not loading (meaning auth check is complete but user is not logged in)
   if (!isAuthenticated && !isLoading) {
@@ -84,8 +109,10 @@ export function Navbar() {
     ...(user?.role === "ADMIN" || user?.role === "FACULTY" || user?.role === "PERSONNEL"
       ? [
           { name: "QPRO", href: "/qpro", icon: ClipboardCheck },
-          { name: "Requests", href: "/requests", icon: MessageSquare }
+          { name: "Requests", href: "/requests", icon: MessageSquare },
         ]
+      : user?.role === "EXTERNAL"
+      ? [{ name: "Requests", href: "/requests", icon: MessageSquare }]
       : []),
   ]
 
@@ -141,6 +168,11 @@ export function Navbar() {
                   >
                     <Icon className="w-4 h-4" />
                     {item.name}
+                    {item.name === 'Requests' && unreadCount > 0 && (
+                      <span className="ml-1 inline-flex items-center justify-center px-1.5 py-0.5 rounded-full text-xs font-bold bg-red-500 text-white min-w-[18px]">
+                        {unreadCount > 9 ? '9+' : unreadCount}
+                      </span>
+                    )}
                   </Button>
                 </Link>
               )
@@ -209,6 +241,11 @@ export function Navbar() {
                     >
                       <Icon className="w-4 h-4" />
                       {item.name}
+                      {item.name === 'Requests' && unreadCount > 0 && (
+                        <span className="ml-1 inline-flex items-center justify-center px-1.5 py-0.5 rounded-full text-xs font-bold bg-red-500 text-white min-w-[18px]">
+                          {unreadCount > 9 ? '9+' : unreadCount}
+                        </span>
+                      )}
                     </Button>
                   </Link>
                 )

@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import type { Document, Unit } from "@/lib/api/types"
-import { Download, Eye, FileText, Filter, Upload, SearchIcon, EyeIcon, Trash2, CheckCircle, XCircle, Building2, ChevronLeft, ChevronRight, MoreVertical, FileSpreadsheet, FileImage, File, LayoutGrid, List, Lock } from "lucide-react"
+import { Download, Eye, FileText, Filter, Upload, SearchIcon, EyeIcon, Trash2, CheckCircle, XCircle, Building2, ChevronLeft, ChevronRight, MoreVertical, FileSpreadsheet, FileImage, File, LayoutGrid, List, Lock, Globe } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import Image from "next/image"
 import { ClientOnly } from "@/components/client-only-wrapper"
@@ -114,6 +114,9 @@ export default function RepositoryPage() {
   const [showRequestDialog, setShowRequestDialog] = useState(false);
   const [requestReason, setRequestReason] = useState("");
   const [submittingRequest, setSubmittingRequest] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalDocs, setTotalDocs] = useState(0);
   const canUpload = user?.role === "ADMIN" || user?.role === "FACULTY" || user?.role === "PERSONNEL"
   
   // Reset upload progress when modal is closed
@@ -286,26 +289,26 @@ export default function RepositoryPage() {
     };
   }, [searchQuery, categoryFilter, unitFilter, router]);
 
-   const fetchDocuments = async () => {
+   const fetchDocuments = async (page = 1) => {
      // Double-check authentication state before fetching
      if (!isAuthenticated || !user) {
        // Don't redirect here, just return to prevent further execution
        return;
      }
-     
+
      try {
        // Only set loading to true if documents haven't been loaded yet
        // This prevents showing loading screen when returning from minimized state
        if (documents.length === 0) {
          setLoading(true);
        }
-       
+
        // First, verify that we have a valid authentication state
        if (!isAuthenticated || !user) {
          // If not authenticated, just return to prevent further execution
          return;
        }
-       
+
        // Then try to get the access token
        const token = await AuthService.getAccessToken();
        if (!token) {
@@ -314,20 +317,22 @@ export default function RepositoryPage() {
          router.push('/');
          return;
        }
-       
+
        // Build query parameters properly
        const queryParams = new URLSearchParams();
        if (searchQuery) queryParams.append('search', searchQuery);
        if (categoryFilter && categoryFilter !== 'all') queryParams.append('category', categoryFilter);
        if (unitFilter) queryParams.append('unit', unitFilter);
-       
+       queryParams.append('page', String(page));
+       queryParams.append('limit', '20');
+
        const response = await fetch(`/api/documents?${queryParams.toString()}`, {
          headers: {
            'Authorization': `Bearer ${token}`,
            'Content-Type': 'application/json',
          }
        });
-     
+
        if (!response.ok) {
          // Check if the error response is JSON
          let errorData: { error?: string } = {};
@@ -337,7 +342,7 @@ export default function RepositoryPage() {
            // If response is not JSON, create a generic error
            errorData = { error: `HTTP error! status: ${response.status}` };
          }
-         
+
          // If we get a 401 (unauthorized) error, the token might have expired
          if (response.status === 401) {
            console.error('Authentication token expired, redirecting to login');
@@ -345,12 +350,15 @@ export default function RepositoryPage() {
            router.push('/');
            return;
          }
-         
+
          throw new Error(errorData.error || `Failed to fetch documents: ${response.status} ${response.statusText}`);
        }
-       
+
        const data = await response.json();
        setDocuments(data.documents || []);
+       setCurrentPage(data.page || page);
+       setTotalPages(data.totalPages || 1);
+       setTotalDocs(data.total || 0);
        setError(null);
      } catch (err) {
        console.error('Error fetching documents:', err);
@@ -360,7 +368,7 @@ export default function RepositoryPage() {
        setLoading(false);
        return; // Return early on error to prevent setting loading to false again in finally
      }
-     
+
      // Set loading to false after successful fetch
      setLoading(false);
    };
@@ -573,9 +581,20 @@ export default function RepositoryPage() {
                       <p className="text-gray-500">Browse and access institutional knowledge resources</p>
                     </div>
                   </div>
+                  {user?.role !== 'STUDENT' && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-[#2B4385] border-[#2B4385] hover:bg-[#2B4385] hover:text-white shrink-0"
+                      onClick={() => router.push('/repository/browse')}
+                    >
+                      <Globe className="w-4 h-4 mr-2" />
+                      Browse All Documents
+                    </Button>
+                  )}
                 </div>
               </div>
-              
+
               {/* Search and Filters - Unified Control Center */}
               <div className="mb-6 animate-fade-in flex flex-col gap-4">
                 <div className="flex gap-4 items-center">
@@ -629,7 +648,7 @@ export default function RepositoryPage() {
                       ))}
                     </SelectContent>
                   </Select>
-                  {isAdmin(user?.role as UserRole) && (
+                  {(user?.role === 'FACULTY' || user?.role === 'PERSONNEL' || isAdmin(user?.role as UserRole)) && (
                     <Select
                       value={unitFilter || "all"}
                       onValueChange={(value) => setUnitFilter(value === "all" ? null : value)}
@@ -669,7 +688,12 @@ export default function RepositoryPage() {
                         {documents.map((doc, index) => {
                           const { icon: FileIcon, color: iconColor, bgColor: iconBgColor } = getFileIcon(doc.fileName || doc.title);
                           const canDelete = user && (user.role === 'ADMIN' || doc.uploadedById === user.id);
-                          const hasAccess = user && (user.role === 'ADMIN' || user.role === 'STUDENT' || doc.uploadedById === user.id || user.unitId === doc.unitId);
+                          const hasAccess = user && (
+                            user.role === 'ADMIN' ||
+                            doc.uploadedById === user.id ||
+                            user.unitId === doc.unitId ||
+                            doc.hasExplicitPermission === true
+                          );
 
                           return (
                             <tr
@@ -849,7 +873,12 @@ export default function RepositoryPage() {
                 {documents.map((doc, index) => {
                   const { icon: FileIcon, color: iconColor, bgColor: iconBgColor } = getFileIcon(doc.fileName || doc.title);
                   const canDelete = user && (user.role === 'ADMIN' || doc.uploadedById === user.id);
-                  const hasAccess = user && (user.role === 'ADMIN' || user.role === 'STUDENT' || doc.uploadedById === user.id || user.unitId === doc.unitId);
+                  const hasAccess = user && (
+                    user.role === 'ADMIN' ||
+                    doc.uploadedById === user.id ||
+                    user.unitId === doc.unitId ||
+                    doc.hasExplicitPermission === true
+                  );
 
                   return (
                     <div
@@ -1038,7 +1067,34 @@ export default function RepositoryPage() {
                 })}
               </div>
               )}
-              
+
+              {/* Pagination Controls */}
+              {totalPages > 1 && documents.length > 0 && (
+                <div className="flex items-center justify-between mt-4 mb-2 px-2">
+                  <p className="text-sm text-gray-500">
+                    Page {currentPage} of {totalPages} — {totalDocs} document{totalDocs !== 1 ? 's' : ''}
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => fetchDocuments(currentPage - 1)}
+                      disabled={currentPage <= 1 || loading}
+                    >
+                      <ChevronLeft className="w-4 h-4" /> Prev
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => fetchDocuments(currentPage + 1)}
+                      disabled={currentPage >= totalPages || loading}
+                    >
+                      Next <ChevronRight className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               {/* Empty State */}
               {documents.length === 0 && !loading && (
                 <div className="animate-fade-in bg-white rounded-xl p-12 text-center" style={{ boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06)', borderRadius: '12px' }}>
