@@ -389,6 +389,11 @@ export interface PrescriptiveItem {
   issue: string;
   action: string;
   nextStep?: string;
+  relatedKpiId?: string;
+  responsibleOffice?: string;
+  priority?: 'HIGH' | 'MEDIUM' | 'LOW';
+  authorizedStrategy?: string;
+  timeframe?: string;
 }
 
 function parsePrescriptiveTextToItems(text: string): PrescriptiveItem[] {
@@ -1135,6 +1140,11 @@ export default function QPROAnalysisDetail({
                 issue: String(x.issue || '').trim(),
                 action: String(x.action || '').trim(),
                 nextStep: x.nextStep ? String(x.nextStep).trim() : undefined,
+                relatedKpiId: x.relatedKpiId ? String(x.relatedKpiId).trim() : undefined,
+                responsibleOffice: x.responsibleOffice ? String(x.responsibleOffice).trim() : undefined,
+                priority: ['HIGH', 'MEDIUM', 'LOW'].includes(x.priority) ? x.priority : undefined,
+                authorizedStrategy: x.authorizedStrategy ? String(x.authorizedStrategy).trim() : undefined,
+                timeframe: x.timeframe ? String(x.timeframe).trim() : undefined,
               }))
               .filter((x: any) => x.title && x.issue && x.action);
           })();
@@ -1179,6 +1189,16 @@ export default function QPROAnalysisDetail({
                       {structuredItems.map((item, idx) => (
                         <li key={idx} className="">
                           <span className="font-semibold text-purple-900">{item.title}</span>
+                          {item.priority && (
+                            <span className={`ml-2 inline-block text-[10px] px-1.5 py-0 rounded-full font-medium ${item.priority === 'HIGH' ? 'bg-red-100 text-red-700' : item.priority === 'MEDIUM' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
+                              {item.priority}
+                            </span>
+                          )}
+                          {item.relatedKpiId && (
+                            <span className="ml-2 inline-block text-[10px] px-1.5 py-0 rounded-full font-medium bg-purple-100 text-purple-700 border border-purple-200">
+                              {item.relatedKpiId}
+                            </span>
+                          )}
 
                           <ul className="list-disc ml-6 mt-1 space-y-1">
                             <li>
@@ -1190,6 +1210,21 @@ export default function QPROAnalysisDetail({
                             {item.nextStep ? (
                               <li>
                                 <span className="font-semibold">Next Step:</span> {item.nextStep}
+                              </li>
+                            ) : null}
+                            {item.responsibleOffice ? (
+                              <li>
+                                <span className="font-semibold">Responsible Office:</span> {item.responsibleOffice}
+                              </li>
+                            ) : null}
+                            {item.authorizedStrategy ? (
+                              <li>
+                                <span className="font-semibold">Strategic Plan Strategy:</span> <em>{item.authorizedStrategy}</em>
+                              </li>
+                            ) : null}
+                            {item.timeframe ? (
+                              <li>
+                                <span className="font-semibold">Timeframe:</span> {item.timeframe}
                               </li>
                             ) : null}
                           </ul>

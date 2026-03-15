@@ -8,11 +8,14 @@ import strategicPlan from '@/lib/data/strategic_plan.json';
 import { computeAggregatedAchievement, getInitiativeTargetMeta, normalizeKraId } from '@/lib/utils/qpro-aggregation';
 
 // Import KPI Type-Aware Analysis Logic
-import { 
-  getKpiTypeCategory, 
+import {
+  getKpiTypeCategory,
   generateTypeSpecificLogicInstruction,
   getGapInterpretation,
   validatePrescriptiveAnalysis,
+  inferDomainContext,
+  buildContextAwarePromptEnrichment,
+  generateContextAwareRecommendation,
   type KpiTypeCategory,
   type RawKpiType
 } from '@/lib/utils/kpi-type-logic';
@@ -473,7 +476,15 @@ async function generatePrescriptiveAnalysis(
     const yearTarget = initiative?.targets?.timeline_data?.find((t: any) => t.year === reportYear)?.target_value;
     const unit = initiative?.targets?.type || k.targetType || 'count';
     const strategiesText = formatList(initiative?.strategies);
-    return `- ${k.initiativeId}: Outputs="${outputs}" | Outcomes="${outcomes}" | Target(${reportYear})=${yearTarget ?? 'N/A'} (${unit}) | Strategies="${strategiesText}"`;
+    const programsText = formatList(initiative?.programs_activities);
+    const officesText = (initiative?.responsible_offices || []).join(', ') || 'N/A';
+    const timeScope = initiative?.targets?.target_time_scope || 'N/A';
+    return `- ${k.initiativeId}:
+  Outputs="${outputs}" | Outcomes="${outcomes}"
+  Target(${reportYear})=${yearTarget ?? 'N/A'} (${unit}) | Scope=${timeScope}
+  Strategies="${strategiesText}"
+  Authorized Programs="${programsText}"
+  Responsible Offices="${officesText}"`;
   }).join('\n');
 
   // Enhanced KPI summary with type category for type-aware analysis
@@ -502,8 +513,14 @@ async function generatePrescriptiveAnalysis(
     return rule;
   }).join('\n');
 
+  // Infer domain context from activity names and KRA title
+  const allActivityNames = activities.map((a: any) => String(a.name || '').trim()).filter(Boolean);
+  const domainContext = inferDomainContext(allActivityNames, kpiSummaries[0]?.initiativeId, kraTitle);
+  const domainPromptEnrichment = buildContextAwarePromptEnrichment(allActivityNames, kpiSummaries[0]?.initiativeId, kraTitle);
+  console.log(`[PRESCRIPTIVE] Domain context inferred: ${domainContext.domain} (${domainContext.domainLabel})`);
+
   const prompt = `
-ROLE: Strategic Planning Advisor for LSPU.
+ROLE: Strategic Planning Advisor for Laguna State Polytechnic University (LSPU).
 CONTEXT: Analyzing performance for "${kraTitle}" (${kraId}).
 
 STRATEGIC PLAN SNAPSHOT (KRA-only, authoritative):
@@ -524,24 +541,39 @@ AUTHORIZED STRATEGIES FOR THIS KRA:
 ${strategies}
 
 ================================================================================
-TYPE-AWARE ANALYSIS RULES (CRITICAL - FOLLOW STRICTLY)
+DOMAIN CONTEXT (CRITICAL - READ BEFORE GENERATING RECOMMENDATIONS)
+================================================================================
+${domainPromptEnrichment}
+================================================================================
+
+================================================================================
+TYPE-AWARE ANALYSIS RULES (FOLLOW STRICTLY)
 ================================================================================
 Your prescriptive recommendations MUST be appropriate for the KPI TYPE.
 Different KPI types require DIFFERENT root cause analysis and action recommendations.
 ${typeSpecificRules}
 
-KEY DISTINCTIONS:
-- VOLUME (count): Gap = "Not enough outputs produced" → Scale up activities, increase frequency, fix reporting lags
-- EFFICIENCY (rate/percentage): Gap = "Poor conversion/quality" → Improve curriculum, training, standards (NOT data collection!)
+KEY DISTINCTIONS (adapt language to domain context above):
+- VOLUME (count): Gap = "Not enough outputs" → domain-appropriate scaling actions
+- EFFICIENCY (rate/percentage): Gap = "Poor conversion/quality" → Improve processes, standards, quality (NOT data collection!)
 - MILESTONE (boolean/status): Gap = "Project delayed" → Fast-track approvals, unblock dependencies
-- PERFORMANCE (score/value): Gap = "Low satisfaction" → Investigate user feedback, conduct surveys
+- PERFORMANCE (score/value): Gap = "Low satisfaction" → Investigate feedback, conduct surveys
 
-⚠️ CRITICAL ANTI-PATTERN TO AVOID:
-For EFFICIENCY metrics (rates/percentages like "Employment Rate", "Passing Rate"):
-- Do NOT suggest "reporting bottleneck", "batch collection", "data collection delays"
-- The data is correct - the ACTUAL PERFORMANCE is low
-- Focus on QUALITY improvement (curriculum, industry alignment, skills training)
+⚠️ CRITICAL ANTI-PATTERNS TO AVOID:
+1. For EFFICIENCY metrics (rates/percentages): Do NOT suggest "reporting bottleneck", "batch collection", "data collection delays". The data is correct - the ACTUAL PERFORMANCE is low.
+2. NEVER output meta-system warnings like "Ensure KPI types are correctly classified" or "Validate that rate KPIs focus on quality". These are internal system concerns, NOT business prescriptions.
+3. Do NOT use generic manufacturing/sales/production language (e.g., "Scale up production capacity") for academic, IT, or governance contexts. Use domain-appropriate terminology.
+================================================================================
 
+================================================================================
+STRATEGIC PLAN GROUNDING RULES (CRITICAL)
+================================================================================
+- Every prescriptive item MUST reference a specific KPI ID from the performance data (e.g., ${kpiSummaries[0]?.initiativeId || 'KRA1-KPI1'})
+- Every "action" MUST cite an authorized strategy or program from the STRATEGIC PLAN SNAPSHOT above
+- The "responsibleOffice" MUST match one of the offices listed in the plan for the relevant KPI
+- Priority: HIGH = achievement < 50%, MEDIUM = 50-80%, LOW = > 80%
+- Timeframe should consider the target scope (cumulative vs per-year) from the plan
+- Do NOT invent strategies, programs, or offices that are not in the strategic plan snapshot
 ================================================================================
 
 TASK:
@@ -549,20 +581,37 @@ TASK:
    - Must reference the overall achievement percentage.
    - Must identify the primary bottleneck KPI (lowest achievement) using the KPI ID and its reported vs target.
    - Must correctly interpret the gap based on the KPI TYPE (see rules above).
+   - Must use language appropriate for the domain context: ${domainContext.domainLabel}.
 2) Produce Prescriptive Analysis as 2–3 items, each with:
-   - title (short)
-   - issue (one sentence, type-aware interpretation)
-   - action (specific, using the correct action archetype for the KPI type)
-   - nextStep (optional, immediate next action)
+   - title (short, domain-appropriate)
+   - issue (one sentence, type-aware interpretation referencing the KPI ID)
+   - action (specific, using the correct action archetype AND citing an authorized strategy/program from the plan, using domain-appropriate language)
+   - nextStep (optional, immediate next action with timeframe)
+   - relatedKpiId (the KPI ID this item addresses, e.g., "KRA3-KPI2")
+   - responsibleOffice (the office from the strategic plan responsible for this action)
+   - priority ("HIGH", "MEDIUM", or "LOW" based on achievement gap severity)
+   - authorizedStrategy (the exact strategy text from the strategic plan that supports this action)
+   - timeframe (recommended timeframe considering the target scope)
   RULE: Only include a "Sustain"/"high performers" item if at least one KPI has >80% achievement. If none are >80%, DO NOT generate that item.
   RULE: Each recommendation MUST match the action archetype for its KPI type (see TYPE-AWARE RULES above).
+  RULE: Every recommendation must be an actionable operational prescription. NEVER include system-internal advice like "classify KPI types" or "validate data types."
 3) Also provide brief supporting fields (alignment/opportunities/gaps/recommendations) for backward compatibility.
 
 OUTPUT FORMAT (JSON):
 {
-  "documentInsight": "...",
+  "documentInsight": "2-4 sentences referencing specific KPI IDs and the strategic plan, using domain-appropriate language",
   "prescriptiveItems": [
-    { "title": "...", "issue": "...", "action": "...", "nextStep": "..." }
+    {
+      "title": "short action title",
+      "issue": "one sentence, type-aware interpretation referencing KPI ID",
+      "action": "specific action citing authorized strategy/program from the plan",
+      "nextStep": "immediate next step with timeframe",
+      "relatedKpiId": "KRAx-KPIy",
+      "responsibleOffice": "office from strategic plan",
+      "priority": "HIGH|MEDIUM|LOW",
+      "authorizedStrategy": "exact strategy text from the plan",
+      "timeframe": "based on target scope"
+    }
   ],
   "alignment": "2-3 sentences on strategic alignment",
   "opportunities": ["..."],
@@ -572,13 +621,14 @@ OUTPUT FORMAT (JSON):
 
 IMPORTANT GUIDANCE:
 - Do NOT critique individual documents/files as if each one must meet the full institutional target.
-- For count-based KPIs (e.g., research outputs), interpret gaps as volume shortfalls at the KRA/KPI level ("need X more outputs"), not "improve Paper A by 149".
-- For rate-based KPIs (e.g., employment rate), interpret gaps as quality/conversion problems - focus on curriculum, training, industry partnerships.
-- Avoid repetitive per-item gap statements; synthesize patterns and provide 3-6 concise bullets.
+- Tailor recommendations to the domain context: ${domainContext.domainLabel}. Use terminology and actions appropriate for a state university, not generic business operations.
+- For rate-based KPIs, interpret gaps as quality/conversion problems - focus on curriculum, training, industry partnerships.
+- Avoid repetitive per-item gap statements; synthesize patterns and provide 2-3 concise prescriptive items.
 
 STRICT OUTPUT RULES:
 - Output MUST be valid JSON only (no extra commentary, no markdown code fences).
 - All JSON string values must be single-line. Do not include literal line breaks inside strings (use spaces or \\n).
+- NEVER output meta-system warnings like "Ensure KPI types are correctly classified" or "Validate data types". Every item must be an actionable business prescription.
 `;
 
   try {
@@ -641,6 +691,23 @@ STRICT OUTPUT RULES:
         return item;
       });
     }
+
+    // Filter out meta-system warnings that shouldn't appear in prescriptive output
+    prescriptiveItems = prescriptiveItems.filter(item => {
+      const combinedText = `${item.title} ${item.issue} ${item.action}`.toLowerCase();
+      const metaWarningPatterns = [
+        /ensure\s+kpi\s+types?\s+(are|is)\s+(correctly\s+)?classified/i,
+        /validate\s+that\s+rate\s+kpis?\s+focus/i,
+        /kpi\s+classification\s+verification/i,
+        /correctly\s+classif(y|ied)\s+.*kpi/i,
+        /ensure\s+.*data\s+types?\s+(are|is)\s+correct/i,
+      ];
+      const isMetaWarning = metaWarningPatterns.some(p => p.test(combinedText));
+      if (isMetaWarning) {
+        console.warn(`[TYPE-AWARE] Filtered meta-system warning from prescriptive output: "${item.title}"`);
+      }
+      return !isMetaWarning;
+    });
 
     return {
       documentInsight: safeString(parsed.documentInsight) || 'Insight pending.',
@@ -723,10 +790,28 @@ STRICT OUTPUT RULES:
           typeAwareNextStep = `Review recent feedback data and plan focus groups within 14 days for ${bottleneck.initiativeId}.`;
           break;
         case 'VOLUME':
-        default:
-          typeAwareAction = 'Increase activity frequency, allocate additional resources, and address any reporting backlogs. Consider batch-processing pending submissions.';
-          typeAwareNextStep = `Validate the latest reported/target values for ${bottleneck.initiativeId} within 7 days.`;
+        default: {
+          // Use domain context for better recommendations
+          const fallbackDomain = inferDomainContext(
+            activities.map((a: any) => String(a.name || '').trim()).filter(Boolean),
+            bottleneck?.initiativeId,
+            kraTitle
+          );
+          if (fallbackDomain.domain === 'ACADEMIC_RESEARCH') {
+            typeAwareAction = 'Intensify research output through faculty research load adjustments, expanded research grants, streamlined IRB/ethics review processes, and research mentoring programs.';
+            typeAwareNextStep = `Convene a research productivity meeting within 14 days to identify immediate output opportunities for ${bottleneck.initiativeId}.`;
+          } else if (fallbackDomain.domain === 'IT_INFRASTRUCTURE') {
+            typeAwareAction = 'Accelerate IT project completion by securing procurement timelines, deploying additional technical personnel, and establishing project milestone tracking.';
+            typeAwareNextStep = `Conduct IT project status review within 7 days for ${bottleneck.initiativeId}.`;
+          } else if (fallbackDomain.domain === 'COMMUNITY_EXTENSION') {
+            typeAwareAction = 'Expand community engagement through additional MOA/MOU partnerships, increase extension activity frequency, and broaden beneficiary coverage.';
+            typeAwareNextStep = `Identify new community partnership opportunities within 14 days for ${bottleneck.initiativeId}.`;
+          } else {
+            typeAwareAction = 'Increase activity frequency, allocate additional resources, and address any reporting backlogs. Consider streamlining processes for faster output generation.';
+            typeAwareNextStep = `Validate the latest reported/target values for ${bottleneck.initiativeId} within 7 days.`;
+          }
           break;
+        }
       }
       
       fallbackItems.push({
@@ -753,11 +838,15 @@ STRICT OUTPUT RULES:
       });
     }
 
-    fallbackItems.push({
-      title: 'Data quality review',
-      issue: 'Minor definition or measurement mismatches (rate vs count, evidence criteria, year alignment) can materially distort KPI achievement calculations.',
-      action: 'Confirm KPI measurement definitions and evidence rules, then update reporting instructions before the next submission window.',
-    });
+    // Remove "KPI classification verification" meta-system warning
+    // and replace with an actionable operational item
+    if (fallbackItems.length < 3) {
+      fallbackItems.push({
+        title: 'Strengthen evidence documentation and reporting',
+        issue: 'Consistent evidence documentation and timely reporting are essential to accurately reflect performance and support data-driven decisions.',
+        action: 'Standardize evidence collection templates, establish clear submission deadlines, and assign unit-level data custodians to ensure complete and accurate reporting.',
+      });
+    }
 
     return {
       documentInsight: documentInsightParts.join(' '),
@@ -945,6 +1034,11 @@ export const PrescriptiveItemSchema = z.object({
   issue: z.string().min(1).describe('The concrete issue or constraint identified'),
   action: z.string().min(1).describe('Concrete action to address the issue (with timeframe when possible)'),
   nextStep: z.string().optional().describe('Optional immediate next step to execute the action'),
+  relatedKpiId: z.string().optional().describe('KPI ID this item addresses (e.g., KRA3-KPI2)'),
+  responsibleOffice: z.string().optional().describe('Office responsible for executing this action'),
+  priority: z.enum(['HIGH', 'MEDIUM', 'LOW']).optional().describe('Priority level based on gap severity'),
+  authorizedStrategy: z.string().optional().describe('Strategy from strategic plan that supports this action'),
+  timeframe: z.string().optional().describe('Recommended timeframe based on target_time_scope'),
 });
 
 export const QPROAnalysisOutputSchema = z.object({
@@ -963,6 +1057,7 @@ export const QPROAnalysisOutputSchema = z.object({
     return Array.isArray(val) ? '• ' + val.join('\n• ') : val;
   }).describe('Actionable recommendations'),
   overallAchievement: z.number().min(0).max(100).describe('Overall achievement score'),
+  insightsGenerated: z.boolean().default(true).describe('Whether prescriptive insights have been generated'),
 });
 
 export type QPROAnalysisOutput = z.infer<typeof QPROAnalysisOutputSchema>;
@@ -1317,7 +1412,7 @@ CRITICAL REMINDERS:
     }
   }
 
-  async processQPRO(fileBuffer: Buffer, fileType: string, unitId?: string, reportYearOverride?: number): Promise<QPROAnalysisOutput> {
+  async processQPRO(fileBuffer: Buffer, fileType: string, unitId?: string, reportYearOverride?: number, skipPrescriptive?: boolean): Promise<QPROAnalysisOutput> {
     try {
       // Validate input
       if (!fileBuffer || fileBuffer.length === 0) {
@@ -1592,13 +1687,62 @@ CRITICAL REMINDERS:
       console.log('[QPRO DIAGNOSTIC] ==========================================');
 
       // ========== PHASE 7: PRESCRIPTIVE ANALYSIS - Generate Insights ==========
-      console.log('[QPRO DIAGNOSTIC] ========== PRESCRIPTIVE ANALYSIS ==========');
-      const prescriptiveResult = await generatePrescriptiveAnalysis(
-        enrichedActivities,
-        normalizedDominantKRA,
-        targetKRA?.kra_title || normalizedDominantKRA,
-        reportYear
-      );
+      // When skipPrescriptive is true, defer insight generation to the review step
+      let prescriptiveResult: {
+        documentInsight: string;
+        prescriptiveItems: Array<{ title: string; issue: string; action: string; nextStep?: string }>;
+        alignment: string;
+        opportunities: string;
+        gaps: string;
+        recommendations: string;
+        overallAchievement: number;
+      };
+
+      if (skipPrescriptive) {
+        console.log('[QPRO DIAGNOSTIC] ========== PRESCRIPTIVE ANALYSIS SKIPPED (deferred to review) ==========');
+        // Compute overall achievement deterministically without LLM
+        const byInit = new Map<string, any[]>();
+        for (const a of enrichedActivities) {
+          const iId = String(a.initiativeId || `${normalizedDominantKRA}-KPI1`).trim();
+          if (!byInit.has(iId)) byInit.set(iId, []);
+          byInit.get(iId)!.push(a);
+        }
+        const kpiAchievements = Array.from(byInit.entries()).map(([iId, acts]) => {
+          const meta = getInitiativeTargetMeta(strategicPlan as any, normalizedDominantKRA, iId, reportYear);
+          const fallbackTarget = typeof acts[0]?.initiativeTarget === 'number'
+            ? acts[0].initiativeTarget
+            : (typeof acts[0]?.target === 'number' ? acts[0].target : Number(acts[0]?.target || 0));
+          const targetValue = meta.targetValue ?? (Number.isFinite(fallbackTarget) && fallbackTarget > 0 ? fallbackTarget : 0);
+          const aggregated = computeAggregatedAchievement({
+            targetType: meta.targetType,
+            targetValue,
+            targetScope: meta.targetScope,
+            activities: acts,
+          });
+          return Math.min(100, Math.max(0, aggregated.achievementPercent));
+        });
+        const deferredOverall = kpiAchievements.length > 0
+          ? kpiAchievements.reduce((s, v) => s + v, 0) / kpiAchievements.length
+          : 0;
+
+        prescriptiveResult = {
+          documentInsight: '',
+          prescriptiveItems: [],
+          alignment: '',
+          opportunities: '',
+          gaps: '',
+          recommendations: '',
+          overallAchievement: deferredOverall,
+        };
+      } else {
+        console.log('[QPRO DIAGNOSTIC] ========== PRESCRIPTIVE ANALYSIS ==========');
+        prescriptiveResult = await generatePrescriptiveAnalysis(
+          enrichedActivities,
+          normalizedDominantKRA,
+          targetKRA?.kra_title || normalizedDominantKRA,
+          reportYear
+        );
+      }
       console.log(`[PRESCRIPTIVE] Overall Achievement: ${prescriptiveResult.overallAchievement}%`);
       console.log('[QPRO DIAGNOSTIC] ==========================================');
 
@@ -1628,7 +1772,8 @@ CRITICAL REMINDERS:
         opportunities: prescriptiveResult.opportunities,
         gaps: prescriptiveResult.gaps,
         recommendations: prescriptiveResult.recommendations,
-        overallAchievement: prescriptiveResult.overallAchievement
+        overallAchievement: prescriptiveResult.overallAchievement,
+        insightsGenerated: !skipPrescriptive
       };
 
       console.log('[QPRO DIAGNOSTIC] ========== FINAL OUTPUT SUMMARY ==========');

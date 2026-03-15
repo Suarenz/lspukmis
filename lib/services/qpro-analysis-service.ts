@@ -374,10 +374,11 @@ export class QPROAnalysisService {
       let analysisOutput: QPROAnalysisOutput;
       try {
         analysisOutput = await analysisEngineService.processQPRO(
-          fileBuffer, 
+          fileBuffer,
           input.documentType,
           input.unitId || undefined,
-          input.year || 2025
+          input.year || 2025,
+          true // skipPrescriptive: defer insight generation to the review step
         );
         console.log('[QPROAnalysisService] Analysis complete, extracted activities:', analysisOutput.activities?.length || 0);
       } catch (analysisError) {
@@ -675,10 +676,12 @@ export class QPROAnalysisService {
         ? formatPrescriptiveItemsAsText(llmPrescriptiveItems)
         : '';
 
+      const insightsGenerated = analysisOutput.insightsGenerated !== false;
+
       const docLevel = {
-        documentInsight: llmDocumentInsight || docLevelFallback.documentInsight,
-        prescriptiveAnalysis: llmPrescriptiveText || docLevelFallback.prescriptiveAnalysis,
-        prescriptiveItems: llmPrescriptiveItems.length > 0 ? llmPrescriptiveItems : undefined,
+        documentInsight: insightsGenerated ? (llmDocumentInsight || docLevelFallback.documentInsight) : '',
+        prescriptiveAnalysis: insightsGenerated ? (llmPrescriptiveText || docLevelFallback.prescriptiveAnalysis) : '',
+        prescriptiveItems: insightsGenerated ? (llmPrescriptiveItems.length > 0 ? llmPrescriptiveItems : undefined) : [],
         summary: {
           ...docLevelFallback.summary,
           year: reportYear,
@@ -696,10 +699,10 @@ export class QPROAnalysisService {
           documentType: input.documentType,
           analysisResult,
           // Keep these fields for backward compatibility, but ensure they remain factual (no recommendations bleeding into insight).
-          alignment: docLevel.documentInsight || toString(alignment) || 'Analysis completed',
+          alignment: insightsGenerated ? (docLevel.documentInsight || toString(alignment) || 'Analysis completed') : 'Pending - insights will be generated after KRA/KPI review',
           opportunities: '',
           gaps: '',
-          recommendations: docLevel.prescriptiveAnalysis || toString(recommendations),
+          recommendations: insightsGenerated ? (docLevel.prescriptiveAnalysis || toString(recommendations)) : '',
           kras: correctedKras as any,
           activities: validatedActivities as any,
           achievementScore: docLevel.summary.overallAchievement,
@@ -708,8 +711,8 @@ export class QPROAnalysisService {
             prescriptiveAnalysis: docLevel.prescriptiveAnalysis,
             prescriptiveItems: docLevel.prescriptiveItems,
             summary: docLevel.summary,
-            generatedAt: new Date().toISOString(),
-            source: 'analysis-engine',
+            generatedAt: insightsGenerated ? new Date().toISOString() : null,
+            source: insightsGenerated ? 'analysis-engine' : 'pending',
           } as any,
           status: 'DRAFT', // Staging workflow: start as DRAFT
           uploadedById: input.uploadedById,

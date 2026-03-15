@@ -5,7 +5,7 @@ import { ChatOpenAI } from '@langchain/openai';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { computeAggregatedAchievement, getInitiativeTargetMeta, normalizeKraId, normalizeInitiativeId } from '@/lib/utils/qpro-aggregation';
 import { qproCacheService } from '@/lib/services/qpro-cache-service';
-import { getKpiTypeCategory, getGapInterpretation, generateTypeSpecificLogicInstruction } from '@/lib/utils/kpi-type-logic';
+import { getKpiTypeCategory, getGapInterpretation, generateTypeSpecificLogicInstruction, inferDomainContext, buildContextAwarePromptEnrichment, generateContextAwareRecommendation } from '@/lib/utils/kpi-type-logic';
 
 interface ActivityToRegenerate {
   name: string;
@@ -260,7 +260,7 @@ export async function POST(request: NextRequest) {
     if ('status' in authResult) return authResult;
 
     const { user } = authResult;
-    const { analysisId, activities } = await request.json();
+    const { analysisId, activities, fullRegeneration } = await request.json();
 
     if (!analysisId || !activities || !Array.isArray(activities)) {
       return NextResponse.json(
@@ -625,8 +625,15 @@ export async function POST(request: NextRequest) {
       };
     });
 
+    // Infer domain context from activity names
+    const allActivityNames = updatedActivities.map((a: any) => String(a.name || '').trim()).filter(Boolean);
+    const kraNames = [...new Set(activitiesContext.map((a: any) => a.kraTitle))];
+    const domainContext = inferDomainContext(allActivityNames, undefined, kraNames.join(', '));
+    const domainPromptEnrichment = buildContextAwarePromptEnrichment(allActivityNames, undefined, kraNames.join(', '));
+    console.log(`[Regenerate] Domain context inferred: ${domainContext.domain} (${domainContext.domainLabel})`);
+
     // Build type-specific instructions
-    const typeInstructions = activitiesContext.map((act: any) => 
+    const typeInstructions = activitiesContext.map((act: any) =>
       generateTypeSpecificLogicInstruction(act.kpiType)
     ).filter((v: string, i: number, a: string[]) => a.indexOf(v) === i).join('\n');
 
@@ -638,14 +645,39 @@ export async function POST(request: NextRequest) {
 
     // Call LLM for fresh prescriptive analysis
     let llmPrescriptiveResult: { documentInsight: string; prescriptiveItems: any[] } | null = null;
-    
+
     try {
+      // Build strategic plan enrichment for each covered KRA
+      const coveredKraIds = [...new Set(updatedActivities.map((a: any) => a.kraId))];
+      const strategicEnrichment = coveredKraIds.map((kraId: any) => {
+        const normalizedKid = normalizeKraId(kraId);
+        const kra = allKRAs.find((k: any) => normalizeKraId(k.kra_id) === normalizedKid);
+        if (!kra) return '';
+
+        const initiatives = (kra.initiatives || []).map((init: any) => {
+          const yearTarget = init.targets?.timeline_data?.find((t: any) => t.year === reportYear);
+          return `  - ${init.id}:
+    Output: ${init.key_performance_indicator?.outputs || 'N/A'}
+    Outcome: ${init.key_performance_indicator?.outcomes || 'N/A'}
+    Target (${reportYear}): ${yearTarget?.target_value ?? 'N/A'} (${init.targets?.type || 'count'})
+    Strategies: ${(init.strategies || []).join('; ')}
+    Authorized Programs: ${(init.programs_activities || []).join('; ')}
+    Responsible Offices: ${(init.responsible_offices || []).join(', ')}
+    Timeline Scope: ${init.targets?.target_time_scope || 'N/A'}`;
+        }).join('\n');
+
+        return `KRA: ${kra.kra_id} - ${kra.kra_title}\n${initiatives}`;
+      }).filter(Boolean).join('\n\n');
+
       // Build fresh start system message with explicit type constraints
       const systemPrompt = `[SYSTEM INSTRUCTION: FRESH START]
 You are analyzing this QPRO data from scratch. Disregard all previous analyses.
 
 CRITICAL METADATA UPDATE - KPI TYPES HAVE BEEN CORRECTED:
 ${kpiTypeNotices || 'All KPIs are count/volume based.'}
+
+DOMAIN CONTEXT:
+${domainPromptEnrichment}
 
 STRICT CONSTRAINTS:
 1. For KPIs marked as RATE, PERCENTAGE, or EFFICIENCY type:
@@ -657,26 +689,63 @@ STRICT CONSTRAINTS:
    - You may diagnose as scaling, capacity, or collection issues
    - Recommendations can focus on increasing volume or streamlining processes
 
+3. NEVER output meta-system warnings like "Ensure KPI types are correctly classified" or "Validate that rate KPIs focus on quality". Every recommendation must be an actionable business/operational prescription.
+4. Use domain-appropriate language for ${domainContext.domainLabel}. Do NOT use generic manufacturing/sales terminology for academic, IT, or governance contexts.
+
 Respond with valid JSON only.`;
 
       const prescriptivePrompt = `[FRESH ANALYSIS REQUIRED - NEW KPI CLASSIFICATIONS]
 
+**STRATEGIC PLAN CONTEXT (AUTHORITATIVE - use this to ground your recommendations):**
+${strategicEnrichment}
+
+**GROUNDING RULES:**
+- Every prescriptive item MUST reference a specific KPI ID (e.g., KRA3-KPI2)
+- Every "action" MUST cite an authorized strategy or program from the STRATEGIC PLAN CONTEXT above
+- The "responsibleOffice" MUST match one of the offices listed in the plan for the relevant KPI
+- Priority: HIGH = achievement < 50%, MEDIUM = 50-80%, LOW = > 80%
+- Do NOT invent strategies, programs, or offices that are not in the strategic plan context
+
 **KPI Type Rules (MUST FOLLOW):**
 ${typeInstructions}
+
+**DOMAIN CONTEXT (CRITICAL):**
+${domainPromptEnrichment}
+
+**ANTI-PATTERNS TO AVOID:**
+- NEVER suggest "Scale up production capacity" for academic or IT contexts
+- NEVER output "Ensure KPI types are correctly classified" - this is a system concern, not a business prescription
+- Use terminology appropriate for ${domainContext.domainLabel} at a state university
 
 **Summary:** ${overallAchievementScore.toFixed(2)}% achievement across ${updatedActivities.length} activities. KRAs: ${kraList}
 
 **Activities with CORRECTED KPI Types:**
-${activitiesContext.map((act: any, i: number) => 
+${activitiesContext.map((act: any, i: number) =>
   `${i+1}. ${act.name}
-   - KPI Type: ${act.kpiType.toUpperCase()} (Category: ${act.kpiCategory})
+   - KPI: ${act.kpiId} | KPI Type: ${act.kpiType.toUpperCase()} (Category: ${act.kpiCategory})
    - Values: ${act.reported}/${act.target} = ${act.achievement.toFixed(1)}%
    - Status: ${act.status}
    - Required Action Type: ${act.actionArchetype}
    ${act.antiPattern ? `- FORBIDDEN: ${act.antiPattern}` : ''}`
 ).join('\n\n')}
 
-Return JSON: {"documentInsight": "<2-3 sentence summary matching KPI types>", "prescriptiveItems": [{"title": "<action title>", "issue": "<describe issue matching KPI type>", "action": "<recommendation matching KPI type>", "nextStep": "<optional next step>"}]}
+Return JSON with this exact structure:
+{
+  "documentInsight": "<2-4 sentence summary referencing specific KPI IDs and strategic plan>",
+  "prescriptiveItems": [
+    {
+      "title": "<short action title>",
+      "issue": "<describe issue matching KPI type, referencing KPI ID>",
+      "action": "<recommendation citing an authorized strategy/program from the plan>",
+      "nextStep": "<optional immediate step with timeframe>",
+      "relatedKpiId": "<KRAx-KPIy>",
+      "responsibleOffice": "<office from strategic plan>",
+      "priority": "<HIGH|MEDIUM|LOW>",
+      "authorizedStrategy": "<exact strategy text from the plan>",
+      "timeframe": "<recommended timeframe>"
+    }
+  ]
+}
 
 REMEMBER: For RATE/PERCENTAGE KPIs, the issue is NEVER about "collecting more data" or "scaling pipelines". It's about IMPROVING QUALITY.`;
 
@@ -684,11 +753,11 @@ REMEMBER: For RATE/PERCENTAGE KPIs, the issue is NEVER about "collecting more da
         new SystemMessage(systemPrompt),
         new HumanMessage(prescriptivePrompt),
       ]);
-      
+
       const jsonMatch = (llmResponse.content?.toString() || '').match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         llmPrescriptiveResult = JSON.parse(jsonMatch[0]);
-        console.log('[Regenerate] LLM prescriptive analysis generated with fresh KPI types');
+        console.log('[Regenerate] LLM prescriptive analysis generated with fresh KPI types and strategic plan context');
       }
     } catch (llmError) {
       console.error('[Regenerate] LLM failed, using fallback:', llmError);
@@ -711,8 +780,21 @@ REMEMBER: For RATE/PERCENTAGE KPIs, the issue is NEVER about "collecting more da
           issueDescription = `"${bottleneck.name}" is at ${Number(bottleneck.achievement || 0).toFixed(1)}% of target. This is a ${bottleneckKpiType.toUpperCase()} KPI measuring quality/efficiency, NOT volume.`;
           actionRecommendation = 'Focus on improving quality of outcomes, process efficiency, curriculum alignment, or training effectiveness. Review compliance criteria and conversion rates rather than increasing volume.';
         } else if (bottleneckCategory === 'VOLUME') {
-          issueDescription = `"${bottleneck.name}" is at ${Number(bottleneck.achievement || 0).toFixed(1)}% of target. This is a count-based KPI measuring volume.`;
-          actionRecommendation = 'Scale up production capacity, increase activity frequency, or streamline collection processes to meet volume targets.';
+          const fallbackDomain = inferDomainContext(
+            updatedActivities.map((a: any) => String(a.name || '').trim()).filter(Boolean),
+            bottleneck.name,
+            activitiesContext.find((a: any) => a.name === bottleneck.name)?.kraTitle || ''
+          );
+          if (fallbackDomain.domain === 'ACADEMIC_RESEARCH') {
+            issueDescription = `"${bottleneck.name}" is at ${Number(bottleneck.achievement || 0).toFixed(1)}% of target. This is a count-based KPI tracking research/academic outputs.`;
+            actionRecommendation = 'Intensify research output through faculty research load adjustments, expanded research grants, streamlined review processes, and research mentoring programs.';
+          } else if (fallbackDomain.domain === 'IT_INFRASTRUCTURE') {
+            issueDescription = `"${bottleneck.name}" is at ${Number(bottleneck.achievement || 0).toFixed(1)}% of target. This is a count-based KPI tracking IT infrastructure deliverables.`;
+            actionRecommendation = 'Accelerate IT project completion by securing procurement timelines, deploying additional technical personnel, and establishing project milestone tracking.';
+          } else {
+            issueDescription = `"${bottleneck.name}" is at ${Number(bottleneck.achievement || 0).toFixed(1)}% of target. This is a count-based KPI measuring volume.`;
+            actionRecommendation = 'Increase output frequency, allocate additional resources, and streamline processes to meet volume targets.';
+          }
         } else {
           issueDescription = `"${bottleneck.name}" is at ${Number(bottleneck.achievement || 0).toFixed(1)}% of target.`;
           actionRecommendation = 'Conduct root cause analysis and implement targeted interventions.';
@@ -742,9 +824,9 @@ REMEMBER: For RATE/PERCENTAGE KPIs, the issue is NEVER about "collecting more da
       }
 
       items.push({
-        title: 'KPI classification verification',
-        issue: 'Ensure KPI types are correctly classified (rate/percentage vs count) to generate appropriate recommendations.',
-        action: 'Validate that rate KPIs focus on quality/efficiency outcomes while count KPIs track volumes correctly.',
+        title: 'Strengthen evidence documentation and reporting',
+        issue: 'Consistent evidence documentation ensures accurate performance tracking and supports data-driven institutional decisions.',
+        action: 'Standardize evidence collection templates, establish clear submission deadlines, and assign unit-level data custodians for complete and accurate reporting.',
       });
 
       // If no high performers exist, we intentionally return only 2 items.
@@ -752,13 +834,15 @@ REMEMBER: For RATE/PERCENTAGE KPIs, the issue is NEVER about "collecting more da
     })();
 
     const prescriptiveTextFormatted = prescriptiveItems
-      .map((x, idx) => {
+      .map((x: any, idx: number) => {
         const lines = [
           `${idx + 1}. ${x.title}`,
           `- Issue: ${x.issue}`,
           `- Action: ${x.action}`,
         ];
         if (x.nextStep) lines.push(`- Next Step: ${x.nextStep}`);
+        if (x.relatedKpiId) lines.push(`- KPI: ${x.relatedKpiId}`);
+        if (x.responsibleOffice) lines.push(`- Responsible Office: ${x.responsibleOffice}`);
         return lines.join('\n');
       })
       .join('\n\n');
@@ -798,6 +882,7 @@ REMEMBER: For RATE/PERCENTAGE KPIs, the issue is NEVER about "collecting more da
         overallAchievement: overallAchievementScore,
       },
       generatedAt: new Date().toISOString(),
+      source: 'regenerated',
     };
 
     // Update the analysis in the database

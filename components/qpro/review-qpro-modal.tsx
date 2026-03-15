@@ -12,9 +12,10 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, CheckCircle, XCircle, Edit2, Target, Lightbulb } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, Edit2, Target, Lightbulb, ArrowLeft, ArrowRight } from 'lucide-react';
 import AuthService from '@/lib/services/auth-service';
 import strategicPlan from '@/lib/data/strategic_plan.json';
+import { Badge } from '@/components/ui/badge';
 import { ActivityCardRedesigned } from '@/components/qpro/activity-card-redesigned';
 import { computeAggregatedAchievement, getInitiativeTargetMeta, normalizeKraId } from '@/lib/utils/qpro-aggregation';
 
@@ -24,6 +25,11 @@ interface PrescriptiveItem {
   issue: string;
   action: string;
   nextStep?: string;
+  relatedKpiId?: string;
+  responsibleOffice?: string;
+  priority?: 'HIGH' | 'MEDIUM' | 'LOW';
+  authorizedStrategy?: string;
+  timeframe?: string;
 }
 
 // Parse prescriptive text into structured items (same as qpro-analysis-detail.tsx)
@@ -328,6 +334,7 @@ export default function ReviewQProModal({
   const [kpiValidationErrors, setKpiValidationErrors] = useState<{ [key: number]: string }>({});
   const [currentProgress, setCurrentProgress] = useState<Map<string, { current: number; target: number }>>(new Map());
   const [isAlreadyApproved, setIsAlreadyApproved] = useState(false);
+  const [reviewStep, setReviewStep] = useState<'ASSIGN' | 'INSIGHTS'>('ASSIGN');
 
   // Fetch current KPI progress to show cumulative achievement
   useEffect(() => {
@@ -476,10 +483,22 @@ export default function ReviewQProModal({
       if (!response.ok) throw new Error('Failed to fetch analysis');
       const data = await response.json();
       setAnalysis(data);
-      
+
       // Check if analysis is already approved
       if (data.status === 'APPROVED') {
         setIsAlreadyApproved(true);
+      }
+
+      // Detect if insights have already been generated
+      const prescriptiveData = data.prescriptiveAnalysis;
+      const insightsExist = prescriptiveData
+        && typeof prescriptiveData === 'object'
+        && prescriptiveData.source !== 'pending'
+        && prescriptiveData.generatedAt !== null;
+      if (insightsExist || data.status === 'APPROVED') {
+        setReviewStep('INSIGHTS');
+      } else {
+        setReviewStep('ASSIGN');
       }
       
       // Extract activities from the response (handles both flat and nested structures)
@@ -897,6 +916,84 @@ export default function ReviewQProModal({
     }
   };
 
+  // Confirm KRA/KPI assignments and generate insights (Step 1 -> Step 2 transition)
+  const handleConfirmAndGenerate = async () => {
+    try {
+      setIsRegenerating(true);
+      setError(null);
+
+      const token = await AuthService.getAccessToken();
+      if (!token) throw new Error('Authentication required');
+
+      // Send ALL activities for fresh insight generation
+      const allActivities = editedActivities.map((act, idx) => ({
+        ...act,
+        index: idx,
+        userSelectedKPI: true, // User has confirmed all assignments
+      }));
+
+      const response = await fetch(`/api/qpro/regenerate-insights`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          analysisId,
+          activities: allActivities,
+          fullRegeneration: true,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to generate insights');
+      }
+
+      const regeneratedData = await response.json();
+
+      // Update analysis state with fresh insights
+      setAnalysis((prev: any) => ({
+        ...(prev || {}),
+        ...regeneratedData,
+        _regeneratedAt: new Date().toISOString(),
+      }));
+
+      // Update activities with recalculated targets/achievements
+      if (regeneratedData.activities?.length > 0) {
+        setEditedActivities((prev) => {
+          const updated = [...prev];
+          regeneratedData.activities.forEach((regenerated: Activity) => {
+            const origIndex = allActivities.find(
+              (a) => a.name === regenerated.name
+            )?.index;
+            if (origIndex !== undefined) {
+              updated[origIndex] = {
+                ...updated[origIndex],
+                ...regenerated,
+              };
+            }
+          });
+          return updated;
+        });
+      }
+
+      // Transition to insights step
+      setReviewStep('INSIGHTS');
+      setChangedKRAIndices(new Set());
+
+      toast({
+        title: 'Insights Generated',
+        description: 'Strategic analysis has been generated based on your confirmed KRA/KPI assignments.',
+        duration: 5000,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate insights');
+    } finally {
+      setIsRegenerating(false);
+    }
+  };
+
   // Calculate summary stats using KPI-type-aware aggregation
   // This matches the backend logic in regenerate-insights endpoint
   const summaryStats = (() => {
@@ -995,6 +1092,20 @@ export default function ReviewQProModal({
         </div>
       ) : (
         <>
+          {/* Step indicator banner */}
+          {!isAlreadyApproved && (
+            <div className="flex items-center gap-3 p-3 bg-slate-50 border border-slate-200 rounded-lg mb-4">
+              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium ${reviewStep === 'ASSIGN' ? 'bg-indigo-100 text-indigo-800 ring-2 ring-indigo-300' : 'bg-slate-100 text-slate-500'}`}>
+                <span className="w-5 h-5 rounded-full bg-current/10 flex items-center justify-center text-[10px] font-bold">1</span>
+                Review KRA/KPI Assignments
+              </div>
+              <ArrowRight className="w-4 h-4 text-slate-400" />
+              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium ${reviewStep === 'INSIGHTS' ? 'bg-indigo-100 text-indigo-800 ring-2 ring-indigo-300' : 'bg-slate-100 text-slate-500'}`}>
+                <span className="w-5 h-5 rounded-full bg-current/10 flex items-center justify-center text-[10px] font-bold">2</span>
+                Review Insights & Approve
+              </div>
+            </div>
+          )}
           {/* Already Approved Warning Banner */}
           {isAlreadyApproved && (
             <div className="p-4 mb-4 bg-amber-50 border border-amber-200 rounded-lg">
@@ -1003,8 +1114,8 @@ export default function ReviewQProModal({
               </p>
             </div>
           )}
-          {/* Document-Level AI Review (exactly one insight + one prescriptive analysis per document) */}
-          {(() => {
+          {/* Document-Level AI Review - only shown in INSIGHTS step */}
+          {reviewStep === 'INSIGHTS' && (() => {
             const documentInsight = extractDocumentLevelInsight(analysis);
             const prescriptiveRaw = extractDocumentLevelPrescriptive(analysis);
 
@@ -1023,6 +1134,11 @@ export default function ReviewQProModal({
                     issue: String(x.issue || '').trim(),
                     action: String(x.action || '').trim(),
                     nextStep: x.nextStep ? String(x.nextStep).trim() : undefined,
+                    relatedKpiId: x.relatedKpiId ? String(x.relatedKpiId).trim() : undefined,
+                    responsibleOffice: x.responsibleOffice ? String(x.responsibleOffice).trim() : undefined,
+                    priority: ['HIGH', 'MEDIUM', 'LOW'].includes(x.priority) ? x.priority : undefined,
+                    authorizedStrategy: x.authorizedStrategy ? String(x.authorizedStrategy).trim() : undefined,
+                    timeframe: x.timeframe ? String(x.timeframe).trim() : undefined,
                   }))
                   .filter((x: any) => x.title && x.issue && x.action);
               })();
@@ -1081,7 +1197,19 @@ export default function ReviewQProModal({
                         <ol className="list-decimal list-inside space-y-3">
                           {structuredItems.map((item, idx) => (
                             <li key={idx} className="">
-                              <span className="font-semibold text-purple-900">{item.title}</span>
+                              <div className="inline-flex items-center gap-2">
+                                <span className="font-semibold text-purple-900">{item.title}</span>
+                                {item.priority && (
+                                  <Badge variant={item.priority === 'HIGH' ? 'destructive' : item.priority === 'MEDIUM' ? 'default' : 'secondary'} className="text-[10px] px-1.5 py-0">
+                                    {item.priority}
+                                  </Badge>
+                                )}
+                                {item.relatedKpiId && (
+                                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-purple-300 text-purple-700">
+                                    {item.relatedKpiId}
+                                  </Badge>
+                                )}
+                              </div>
 
                               <ul className="list-disc ml-6 mt-1 space-y-1">
                                 <li>
@@ -1093,6 +1221,21 @@ export default function ReviewQProModal({
                                 {item.nextStep ? (
                                   <li>
                                     <span className="font-semibold">Next Step:</span> {item.nextStep}
+                                  </li>
+                                ) : null}
+                                {item.responsibleOffice ? (
+                                  <li>
+                                    <span className="font-semibold">Responsible Office:</span> {item.responsibleOffice}
+                                  </li>
+                                ) : null}
+                                {item.authorizedStrategy ? (
+                                  <li>
+                                    <span className="font-semibold">Strategic Plan Strategy:</span> <em>{item.authorizedStrategy}</em>
+                                  </li>
+                                ) : null}
+                                {item.timeframe ? (
+                                  <li>
+                                    <span className="font-semibold">Timeframe:</span> {item.timeframe}
                                   </li>
                                 ) : null}
                               </ul>
@@ -1138,69 +1281,124 @@ export default function ReviewQProModal({
   // Footer component for both modal and full-page rendering
   const ReviewFooter = () => (
     <div className={forceFullPage ? 'mt-6 gap-2 flex flex-col sm:flex-row' : 'gap-2 flex flex-col sm:flex-row'}>
-      {/* Info text when KRAs are changed */}
-      {changedKRAIndices.size > 0 && !isAlreadyApproved && (
-        <div className="sm:col-span-2 md:col-span-3 p-3 bg-blue-50 border border-blue-200 rounded-lg mb-2">
-          <p className="text-sm text-blue-700">
-            <strong>{changedKRAIndices.size} activity update(s) pending.</strong> Click "Regenerate Insights" to update targets and document-level AI analysis based on corrected KRA/KPI selections.
-          </p>
-        </div>
-      )}
-      
-      <Button variant="outline" onClick={onClose} disabled={isApproving || isRejecting || isRegenerating}>
-        Cancel
-      </Button>
-      
-      {/* Regenerate Insights Button - visible when KRAs changed and not already approved */}
-      {changedKRAIndices.size > 0 && !isAlreadyApproved && (
-        <Button
-          onClick={handleRegenerateInsights}
-          disabled={isRegenerating || isSubmitting}
-          className="bg-indigo-600 hover:bg-indigo-700"
-        >
-          {isRegenerating ? (
-            <Loader2 className="w-4 h-4 animate-spin mr-2" />
-          ) : (
-            <Edit2 className="w-4 h-4 mr-2" />
+      {/* Step 1 (ASSIGN): Show "Confirm & Generate Insights" button */}
+      {reviewStep === 'ASSIGN' && !isAlreadyApproved && (
+        <>
+          {/* Info text when KRAs are changed */}
+          {changedKRAIndices.size > 0 && (
+            <div className="sm:col-span-2 md:col-span-3 p-3 bg-blue-50 border border-blue-200 rounded-lg mb-2 w-full">
+              <p className="text-sm text-blue-700">
+                <strong>{changedKRAIndices.size} activity update(s) pending.</strong> Your changes will be applied when you confirm assignments.
+              </p>
+            </div>
           )}
-          {isRegenerating ? 'Regenerating...' : 'Regenerate Insights'}
-        </Button>
+
+          <Button variant="outline" onClick={onClose} disabled={isRegenerating}>
+            Cancel
+          </Button>
+
+          <Button
+            onClick={handleConfirmAndGenerate}
+            disabled={isRegenerating}
+            className="bg-indigo-600 hover:bg-indigo-700"
+          >
+            {isRegenerating ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                Generating Insights...
+              </>
+            ) : (
+              <>
+                <CheckCircle className="w-4 h-4 mr-2" />
+                Confirm Assignments & Generate Insights
+              </>
+            )}
+          </Button>
+        </>
       )}
-      
-      <Button
-        variant="destructive"
-        onClick={handleReject}
-        disabled={isLoading || isApproving || isRejecting || isRegenerating || isAlreadyApproved}
-      >
-        {isRejecting ? (
-          <>
-            <Loader2 className="w-4 h-4 animate-spin mr-2" />
-            Rejecting...
-          </>
-        ) : (
-          <>
-            <XCircle className="w-4 h-4 mr-2" />
-            Reject
-          </>
-        )}
-      </Button>
-      <Button
-        onClick={handleApprove}
-        disabled={isLoading || isApproving || isRejecting || isRegenerating || isAlreadyApproved}
-        className="bg-green-600 hover:bg-green-700"
-      >
-        {isApproving ? (
-          <>
-            <Loader2 className="w-4 h-4 animate-spin mr-2" />
-            Approving...
-          </>
-        ) : (
-          <>
-            <CheckCircle className="w-4 h-4 mr-2" />
-            Approve & Commit
-          </>
-        )}
-      </Button>
+
+      {/* Step 2 (INSIGHTS): Show Back, Regenerate, Reject, Approve buttons */}
+      {(reviewStep === 'INSIGHTS' || isAlreadyApproved) && (
+        <>
+          {/* Info text when KRAs are changed in INSIGHTS step */}
+          {changedKRAIndices.size > 0 && !isAlreadyApproved && (
+            <div className="sm:col-span-2 md:col-span-3 p-3 bg-blue-50 border border-blue-200 rounded-lg mb-2 w-full">
+              <p className="text-sm text-blue-700">
+                <strong>{changedKRAIndices.size} activity update(s) pending.</strong> Click "Regenerate Insights" to update targets and document-level AI analysis based on corrected KRA/KPI selections.
+              </p>
+            </div>
+          )}
+
+          {!isAlreadyApproved && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                setReviewStep('ASSIGN');
+                // Clear insights display when going back to make it clear they need regeneration
+              }}
+              disabled={isApproving || isRejecting || isRegenerating}
+            >
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Back to Assignments
+            </Button>
+          )}
+
+          <Button variant="outline" onClick={onClose} disabled={isApproving || isRejecting || isRegenerating}>
+            Cancel
+          </Button>
+
+          {/* Regenerate Insights Button - visible when KRAs changed and not already approved */}
+          {changedKRAIndices.size > 0 && !isAlreadyApproved && (
+            <Button
+              onClick={handleRegenerateInsights}
+              disabled={isRegenerating || isSubmitting}
+              className="bg-indigo-600 hover:bg-indigo-700"
+            >
+              {isRegenerating ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              ) : (
+                <Edit2 className="w-4 h-4 mr-2" />
+              )}
+              {isRegenerating ? 'Regenerating...' : 'Regenerate Insights'}
+            </Button>
+          )}
+
+          <Button
+            variant="destructive"
+            onClick={handleReject}
+            disabled={isLoading || isApproving || isRejecting || isRegenerating || isAlreadyApproved}
+          >
+            {isRejecting ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                Rejecting...
+              </>
+            ) : (
+              <>
+                <XCircle className="w-4 h-4 mr-2" />
+                Reject
+              </>
+            )}
+          </Button>
+          <Button
+            onClick={handleApprove}
+            disabled={isLoading || isApproving || isRejecting || isRegenerating || isAlreadyApproved}
+            className="bg-green-600 hover:bg-green-700"
+          >
+            {isApproving ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                Approving...
+              </>
+            ) : (
+              <>
+                <CheckCircle className="w-4 h-4 mr-2" />
+                Approve & Commit
+              </>
+            )}
+          </Button>
+        </>
+      )}
     </div>
   );
 
