@@ -19,6 +19,12 @@ interface Source {
   qproAnalysisId?: string;
 }
 
+// Helper: clamp a confidence/relevance score to [0, 1]
+function clampScore(score: number | undefined | null, fallback = 0.85): number {
+  const val = (typeof score === 'number' && score > 0) ? score : fallback;
+  return Math.min(Math.max(val, 0), 1);
+}
+
 // Helper function to generate consistent cache keys
 function generateCacheKey(query: string, unitId?: string, category?: string, filters?: any) {
   // Convert "undefined" string to proper undefined/null for consistent cache keys
@@ -285,16 +291,10 @@ async function mapColivaraResultsToDocuments(colivaraResults: any[]) {
             }
           })(),
           // Add search-specific fields
-          score: (() => {
-            const rawScore = result.score || result.confidenceScore;
-            return (typeof rawScore === 'number') ? rawScore : 0.85; // Default to high relevance if Colivara found it
-          })(),
+          score: clampScore(result.score || result.confidenceScore),
           pageNumbers: result.pageNumbers || [],
           documentSection: result.documentSection || '',
-          confidenceScore: (() => {
-            const rawScore = result.confidenceScore || result.score;
-            return (typeof rawScore === 'number') ? rawScore : 0.85; // Default to high relevance if Colivara found it
-          })(),
+          confidenceScore: clampScore(result.confidenceScore || result.score),
           visualContent: result.visualContent, // Add visual content if available
           extractedText: result.extractedText, // Add extracted text if available
           // QPRO document information
@@ -520,7 +520,7 @@ export async function GET(request: NextRequest) {
           // Use more results for comprehensive queries, but make sure we don't exceed what we have
           const resultsForGeneration = isComprehensiveQuery ?
             enhancedCachedResult.results.slice(0, Math.min(6, enhancedCachedResult.results.length)) : // Use up to 6 results for comprehensive queries
-            enhancedCachedResult.results.slice(0, 1);  // Use only top result for specific queries
+            enhancedCachedResult.results.slice(0, 3);  // Use top 3 results for specific queries for better context
           
           const qwenResult = await service.generateInsights(
             query,
@@ -564,7 +564,7 @@ export async function GET(request: NextRequest) {
             const basicSources = enhancedCachedResult.results.slice(0, Math.min(3, enhancedCachedResult.results.length)).map((result: any) => ({
               title: result.title || 'Untitled Document',
               documentId: result.documentId || result.id || '', // Use id as fallback if documentId is not set
-              confidence: result.score || result.confidenceScore || 0.85,
+              confidence: clampScore(result.score || result.confidenceScore),
             }));
             const fallbackResponse = {
               ...enhancedCachedResult,
@@ -615,7 +615,7 @@ export async function GET(request: NextRequest) {
         // If generateResponse is true, limit results to the most relevant document
         if (generateResponse && mappedResults && mappedResults.length > 0) {
           // Use only the top result for display when generating AI response
-          responseResults = mappedResults.slice(0, 1);
+          responseResults = mappedResults.slice(0, 3);
         }
 
         const response: any = {
@@ -925,7 +925,7 @@ export async function GET(request: NextRequest) {
             // Use more results for comprehensive queries, but make sure we don't exceed what we have
             const resultsForGeneration = isComprehensiveQuery ?
               cleanResults.slice(0, Math.min(6, cleanResults.length)) : // Use up to 6 results for comprehensive queries
-              cleanResults.slice(0, 1);  // Use only top result for specific queries
+              cleanResults.slice(0, 3);  // Use top 3 results for specific queries for better context
             
             const service = getQwenService();
             if (!service) {
@@ -1043,9 +1043,11 @@ export async function GET(request: NextRequest) {
                 }
                 
                 // Ensure confidence is a valid number (fallback to result's score if Qwen returns 0)
-                const confidence = (source.confidence && source.confidence > 0) 
-                  ? source.confidence 
-                  : (originalResult?.score || 0.85);
+                // Clamp to [0, 1] to prevent >100% relevance display
+                const rawConfidence = (source.confidence && source.confidence > 0)
+                  ? source.confidence
+                  : (originalResult?.score || (originalResult as any)?.confidenceScore || 0.85);
+                const confidence = Math.min(Math.max(rawConfidence, 0), 1);
                 
                 return {
                   ...source,
@@ -1087,7 +1089,7 @@ export async function GET(request: NextRequest) {
             // This ensures that when the response is cached, it includes the visual content needed for multimodal processing
             if (cleanResults.length > 0) {
               // Map the cleanResults (with visual content) to the response results
-              response.results = cleanResults.slice(0, 1); // Use only top result for display when generating AI response
+              response.results = cleanResults.slice(0, 3); // Use top 3 results for display when generating AI response
             }
           } catch (generationError) {
             console.error('Qwen generation failed:', generationError);
@@ -1164,7 +1166,7 @@ export async function GET(request: NextRequest) {
             // Use more results for comprehensive queries, but make sure we don't exceed what we have
             const resultsForGeneration = isComprehensiveQuery ?
               groupedResults.slice(0, Math.min(6, groupedResults.length)) : // Use up to 6 results for comprehensive queries
-              groupedResults.slice(0, 1);  // Use only top result for specific queries
+              groupedResults.slice(0, 3);  // Use top 3 results for specific queries for better context
             
             // Use generateInsights to get both the response and the sources used
             const service = getQwenService();
@@ -1186,7 +1188,7 @@ export async function GET(request: NextRequest) {
               qwenResult.sources.map(source => ({
                 ...source,
                 title: cleanDocumentTitle(source.title),
-                confidence: (source.confidence && source.confidence > 0) ? source.confidence : 0.85
+                confidence: clampScore(source.confidence)
               })) : [];
             
             // Deduplicate sources to avoid showing the same document multiple times
@@ -1210,7 +1212,7 @@ export async function GET(request: NextRequest) {
                 const basicSources = groupedResults.slice(0, Math.min(3, groupedResults.length)).map((result: any) => ({
                   title: result.title || 'Untitled Document',
                   documentId: result.documentId || result.id || '', // Use id as fallback
-                  confidence: result.score || result.confidenceScore || 0.85,
+                  confidence: clampScore(result.score || result.confidenceScore),
                 }));
                 response.sources = deduplicateSources(basicSources);
               }
@@ -1287,7 +1289,7 @@ export async function GET(request: NextRequest) {
           // Use more results for comprehensive queries, but make sure we don't exceed what we have
           const resultsForGeneration = isComprehensiveQuery ?
             groupedResults.slice(0, Math.min(6, groupedResults.length)) : // Use up to 6 results for comprehensive queries
-            groupedResults.slice(0, 1);  // Use only top result for specific queries
+            groupedResults.slice(0, 3);  // Use top 3 results for specific queries for better context
         
           // Use generateInsights to get both the response and the sources used
           const service = getQwenService();
@@ -1309,7 +1311,7 @@ export async function GET(request: NextRequest) {
             qwenResult.sources.map(source => ({
               ...source,
               title: cleanDocumentTitle(source.title),
-              confidence: (source.confidence && source.confidence > 0) ? source.confidence : 0.85
+              confidence: clampScore(source.confidence)
             })) : [];
         
           // Deduplicate sources to avoid showing the same document multiple times
@@ -1332,7 +1334,7 @@ export async function GET(request: NextRequest) {
             const basicSources = groupedResults.slice(0, Math.min(3, groupedResults.length)).map(result => ({
               title: result.title || 'Untitled Document',
               documentId: result.documentId || result.id || '', // Use id as fallback
-              confidence: result.score || result.confidenceScore || 0.85,
+              confidence: clampScore(result.score || result.confidenceScore),
             }));
             response.sources = deduplicateSources(basicSources);
           }
@@ -1429,7 +1431,7 @@ export async function POST(request: NextRequest) {
           // Use more results for comprehensive queries, but make sure we don't exceed what we have
           const resultsForGeneration = isComprehensiveQuery ?
             enhancedCachedResult.results.slice(0, Math.min(6, enhancedCachedResult.results.length)) : // Use up to 6 results for comprehensive queries
-            enhancedCachedResult.results.slice(0, 1);  // Use only top result for specific queries
+            enhancedCachedResult.results.slice(0, 3);  // Use top 3 results for specific queries for better context
           
           const qwenResult = await service.generateInsights(
             query,
@@ -1473,7 +1475,7 @@ export async function POST(request: NextRequest) {
             const basicSources = enhancedCachedResult.results.slice(0, Math.min(3, enhancedCachedResult.results.length)).map((result: any) => ({
               title: result.title || 'Untitled Document',
               documentId: result.documentId || result.id || '', // Use id as fallback if documentId is not set
-              confidence: result.score || result.confidenceScore || 0.85,
+              confidence: clampScore(result.score || result.confidenceScore),
             }));
             const fallbackResponse = {
               ...enhancedCachedResult,
@@ -1894,7 +1896,7 @@ export async function POST(request: NextRequest) {
         
         const resultsForGeneration = isComprehensiveQuery ?
           searchResults.slice(0, Math.min(6, searchResults.length)) : // Use up to 6 results for comprehensive queries
-          searchResults.slice(0, 1);  // Use only top result for specific queries
+          searchResults.slice(0, 3);  // Use top 3 results for specific queries for better context
           
         // Use generateInsights to get both the response and the sources used
         const service = getQwenService();
@@ -1950,9 +1952,11 @@ export async function POST(request: NextRequest) {
             }
             
             // Ensure confidence is a valid number (fallback to result's score if Qwen returns 0)
-            const confidence = (source.confidence && source.confidence > 0) 
-              ? source.confidence 
+            // Clamp to [0, 1] to prevent >100% relevance display
+            const rawConfidence2 = (source.confidence && source.confidence > 0)
+              ? source.confidence
               : (originalResult?.score || originalResult?.confidenceScore || 0.85);
+            const confidence = Math.min(Math.max(rawConfidence2, 0), 1);
             
             return {
               ...source,
@@ -1998,7 +2002,7 @@ export async function POST(request: NextRequest) {
           const basicSources = searchResults.slice(0, Math.min(3, searchResults.length)).map(result => ({
             title: result.title || 'Untitled Document',
             documentId: result.originalDocumentId || result.documentId,
-            confidence: result.score || result.confidenceScore || 0.85,
+            confidence: clampScore(result.score || result.confidenceScore),
             isQproDocument: result.isQproDocument || false,
             qproAnalysisId: result.qproAnalysisId,
           }));

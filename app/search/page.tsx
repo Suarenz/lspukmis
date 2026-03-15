@@ -541,7 +541,7 @@ export default function SearchPage() {
                                     {(enhancedDoc?.confidenceScore || (doc as any).confidenceScore || (doc as any).score) ? (
                                       <div className="inline-flex items-center gap-1 bg-primary/10 px-2 py-1 rounded-md">
                                         <span className="text-xs font-medium text-primary">
-                                          Relevance: {(((enhancedDoc?.confidenceScore || (doc as any).confidenceScore || (doc as any).score) || 0.85) * 100).toFixed(0)}%
+                                          Relevance: {(Math.min(((enhancedDoc?.confidenceScore || (doc as any).confidenceScore || (doc as any).score) || 0.85), 1) * 100).toFixed(0)}%
                                         </span>
                                       </div>
                                     ) : null}

@@ -486,7 +486,9 @@ class ColivaraService {
         }
                                   
         // Extract score - prioritize raw_score/normalized_score from Colivara API
-        const score = item.normalized_score || item.raw_score || item.score || item.similarity || item.prob || item.confidence || 0;
+        const rawScore = item.normalized_score || item.raw_score || item.score || item.similarity || item.prob || item.confidence || 0;
+        // Clamp score to [0, 1] range to prevent >100% relevance display
+        const score = Math.min(Math.max(rawScore, 0), 1);
         
         // Extract content from various possible fields in Colivara response
         // Colivara is a multimodal search that returns page images (img_base64), not extracted text
@@ -1344,8 +1346,9 @@ class ColivaraService {
       }
 
       const results: SearchResult[] = sessionResults.map((item: any) => {
-        const score =
+        const rawScore =
           item.normalized_score || item.raw_score || item.score || item.similarity || 0;
+        const score = Math.min(Math.max(rawScore, 0), 1);
         const extractedContent =
           item.chunk || item.content || item.text || item.page_content ||
           item.metadata?.content || item.metadata?.text ||

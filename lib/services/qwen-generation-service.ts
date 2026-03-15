@@ -69,9 +69,19 @@ const NO_INFORMATION_INDICATORS = [
 function isNoInformationResponse(response: string): boolean {
   if (!response || typeof response !== 'string') return false;
   const lowerResponse = response.toLowerCase();
-  
+
   // Check if the response starts with or contains common "no info" patterns
   return NO_INFORMATION_INDICATORS.some(indicator => lowerResponse.includes(indicator));
+}
+
+/**
+ * Strip chain-of-thought <think>...</think> blocks that Qwen3 models emit
+ * before their actual response, preventing tag leakage into the UI and
+ * broken JSON.parse calls.
+ */
+function stripThinkTags(text: string): string {
+  if (!text) return text;
+  return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 }
 
 class QwenGenerationService {
@@ -88,7 +98,7 @@ class QwenGenerationService {
 
     this.config = {
       apiKey,
-      model: config?.model || process.env.QWEN_MODEL || 'qwen/qwen-2.5-vl-72b-instruct',
+      model: config?.model || process.env.QWEN_MODEL || 'qwen/qwen3.5-flash-02-23',
       baseURL: config?.baseURL || process.env.QWEN_BASE_URL || 'https://openrouter.ai/api/v1',
       generationConfig: config?.generationConfig || {
         temperature: 0.2,
@@ -116,6 +126,19 @@ class QwenGenerationService {
 
     this.configService = ConfigService.getInstance();
     this.monitoringService = MonitoringService.getInstance();
+  }
+
+  /** Returns true when the configured model supports vision/image inputs. */
+  private isVisionModel(): boolean {
+    return !!(this.config.model && (
+      this.config.model.includes('vl') ||
+      this.config.model.includes('vision') ||
+      this.config.model.includes('106') ||
+      this.config.model.includes('1106-preview') ||
+      this.config.model.includes('4-turbo') ||
+      this.config.model.includes('4o') ||
+      this.config.model.includes('qwen3') // qwen3.x models (e.g. qwen3.5-flash) support vision natively
+    ));
   }
 
   /**
@@ -204,14 +227,7 @@ class QwenGenerationService {
       const hasVisualContent = resultsForGeneration.some(result => result.visualContent || (result.screenshots && result.screenshots.length > 0));
       
       // Also check if the model supports image inputs
-      const isImageSupported = this.config.model && (
-        this.config.model.includes('vl') ||
-        this.config.model.includes('vision') ||
-        this.config.model.includes('106') ||  // newer models often support images
-        this.config.model.includes('1106-preview') ||
-        this.config.model.includes('4-turbo') ||
-        this.config.model.includes('4o')
-      );
+      const isImageSupported = this.isVisionModel();
       
       let result: string;
       if (options.textOnly || !hasVisualContent || !isImageSupported) {
@@ -334,7 +350,7 @@ Provide a direct, specific answer with the actual extracted data. Include citati
       top_p: this.config.generationConfig?.topP,
     });
 
-    return completion.choices[0].message.content || '';
+    return stripThinkTags(completion.choices[0].message.content || '');
  }
 
   /**
@@ -346,15 +362,8 @@ Provide a direct, specific answer with the actual extracted data. Include citati
     options: GenerationOptions
   ): Promise<string> {
     // Check if the model supports image inputs by checking the model name
-    const isImageSupported = this.config.model && (
-      this.config.model.includes('vl') ||
-      this.config.model.includes('vision') ||
-      this.config.model.includes('106') ||  // newer models often support images
-      this.config.model.includes('1106-preview') ||
-      this.config.model.includes('4-turbo') ||
-      this.config.model.includes('4o')
-    );
-    
+    const isImageSupported = this.isVisionModel();
+
     // If image input is not supported by this model, fall back to text-only
     if (!isImageSupported) {
       console.log(`Model ${this.config.model} does not support image input, falling back to text-only generation`);
@@ -504,7 +513,7 @@ When the user asks for a list of items (such as faculty and their trainings/semi
         top_p: this.config.generationConfig?.topP,
       });
 
-      return completion.choices[0].message.content || '';
+      return stripThinkTags(completion.choices[0].message.content || '');
     } catch (error: any) {
       // If image input fails, fall back to text-only processing
       if (error.status === 404 && error.message.includes('image input')) {
@@ -769,14 +778,7 @@ Please format your response as JSON with the following structure:
 }`;
 
       // Check if the model supports image inputs by checking the model name
-      const isImageSupported = this.config.model && (
-        this.config.model.includes('vl') ||
-        this.config.model.includes('vision') ||
-        this.config.model.includes('106') ||  // newer models often support images
-        this.config.model.includes('1106-preview') ||
-        this.config.model.includes('4-turbo') ||
-        this.config.model.includes('4o')
-      );
+      const isImageSupported = this.isVisionModel();
       
       // If image input is not supported by this model, fall back to text-only
       if (!isImageSupported) {
@@ -786,7 +788,7 @@ Please format your response as JSON with the following structure:
         // Return a structured response similar to what the JSON format would provide
         const fallbackResult = {
           summary: textResponse,
-          keyPoints: [textResponse.substring(0, 200)],
+          keyPoints: textResponse.split('\n').map(l => l.trim()).filter(l => l.length > 0).slice(0, 5),
           sources: limitedResults.map(result => ({
             title: result.title || 'Untitled Document',
             documentId: result.id || result.documentId || '',
@@ -836,7 +838,7 @@ Please format your response as JSON with the following structure:
           // Return a structured response similar to what the JSON format would provide
           const fallbackResult = {
             summary: textResponse,
-            keyPoints: [textResponse.substring(0, 200)],
+            keyPoints: textResponse.split('\n').map(l => l.trim()).filter(l => l.length > 0).slice(0, 5),
             sources: limitedResults.map(result => ({
               title: result.title || 'Untitled Document',
               documentId: result.id || result.documentId || '',
@@ -859,8 +861,9 @@ Please format your response as JSON with the following structure:
         throw error;
       }
 
-      const text = completion.choices[0].message.content || '';
-      
+      const rawText = completion.choices[0].message.content || '';
+      const text = stripThinkTags(rawText);
+
       // Parse the JSON response
       try {
         const parsed = JSON.parse(text);

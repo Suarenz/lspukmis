@@ -139,65 +139,14 @@ const QwenResponseDisplay: React.FC<QwenResponseDisplayProps> = ({
         </CardHeader>
         <CardContent>
           <div className="space-y-2">
-            <div className="h-4 bg-gray-20 rounded w-3/4"></div>
+            <div className="h-4 bg-gray-200 rounded w-3/4"></div>
             <div className="h-4 bg-gray-200 rounded"></div>
             <div className="h-4 bg-gray-200 rounded w-5/6"></div>
-            {sources && sources.length > 0 && (
-              <div className="mt-4 pt-4 border-t border-gray-200">
-                <h4 className="flex items-center gap-2 font-medium mb-2">
-                  <FileText className="w-4 h-4" />
-                  Source Documents
-                </h4>
-                <ul className="space-y-2">
-                  {sources.map((source, index) => {
-                    const documentUrl = getDocumentUrl(source);
-                    const hasValidUrl = documentUrl !== null;
-                    
-                    return (
-                      <li key={index} className="flex items-start gap-2 text-sm">
-                        <span className="text-xs bg-blue-100 text-blue-800 rounded-full w-5 h-5 flex items-center justify-center shrink-0 mt-0.5 font-semibold">
-                          {index + 1}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            {hasValidUrl ? (
-                              <Link 
-                                href={documentUrl} 
-                                className="font-medium text-blue-600 hover:text-blue-800 hover:underline transition-colors cursor-pointer truncate"
-                              >
-                                {cleanDocumentTitle(source.title)}
-                              </Link>
-                            ) : (
-                              <span className="font-medium text-gray-700 truncate">
-                                {cleanDocumentTitle(source.title)}
-                              </span>
-                            )}
-                            {source.isQproDocument && (
-                              <Badge variant="default" className="bg-blue-600 hover:bg-blue-700 text-xs">QPRO</Badge>
-                            )}
-                          </div>
-                          {typeof source.confidence === 'number' && source.confidence > 0 && (
-                            <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded mt-1 inline-block">
-                              {(source.confidence * 100).toFixed(1)}% relevance
-                            </span>
-                          )}
-                        </div>
-                        {/* Only show external link icon if we have a valid URL */}
-                        {hasValidUrl && (
-                          <Link 
-                            href={documentUrl} 
-                            className="text-blue-600 hover:text-blue-800 transition-colors shrink-0"
-                          >
-                            <ExternalLink className="w-4 h-4" />
-                            <span className="sr-only">View Document</span>
-                          </Link>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            )}
+            <div className="mt-4 pt-4 border-t border-gray-200">
+              <div className="h-4 bg-gray-200 rounded w-1/3 mb-2"></div>
+              <div className="h-3 bg-gray-100 rounded w-2/3 mb-1"></div>
+              <div className="h-3 bg-gray-100 rounded w-1/2"></div>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -296,48 +245,47 @@ const QwenResponseDisplay: React.FC<QwenResponseDisplayProps> = ({
           
           {sources && sources.length > 0 && (
             <div className="mt-4 pt-4 border-t border-gray-200">
-              <h4 className="flex items-center gap-2 font-medium mb-2">
+              <h4 className="flex items-center gap-2 font-medium mb-2 text-sm">
                 <FileText className="w-4 h-4" />
-                Source Documents
+                Source Documents ({Math.min(sources.length, 3)} of {sources.length})
               </h4>
-              <ul className="space-y-2">
-                {sources.map((source, index) => {
+              <ul className="space-y-1.5">
+                {sources.slice(0, 3).map((source, index) => {
                   const documentUrl = getDocumentUrl(source);
                   const hasValidUrl = documentUrl !== null;
-                  
+                  // Clamp confidence to [0, 1] for display
+                  const clampedConfidence = typeof source.confidence === 'number' ? Math.min(Math.max(source.confidence, 0), 1) : 0;
+
                   return (
-                    <li key={index} className="flex items-start gap-2 text-sm">
-                      <span className="text-xs bg-blue-100 text-blue-800 rounded-full w-5 h-5 flex items-center justify-center shrink-0 mt-0.5 font-semibold">
+                    <li key={index} className="flex items-center gap-2 text-sm">
+                      <span className="text-xs bg-blue-100 text-blue-800 rounded-full w-5 h-5 flex items-center justify-center shrink-0 font-semibold">
                         {index + 1}
                       </span>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          {hasValidUrl ? (
-                            <Link 
-                              href={documentUrl} 
-                              className="font-medium text-blue-600 hover:text-blue-800 hover:underline transition-colors cursor-pointer truncate"
-                            >
-                              {cleanDocumentTitle(source.title)}
-                            </Link>
-                          ) : (
-                            <span className="font-medium text-gray-700 truncate">
-                              {cleanDocumentTitle(source.title)}
-                            </span>
-                          )}
-                          {source.isQproDocument && (
-                            <Badge variant="default" className="bg-blue-600 hover:bg-blue-700 text-xs">QPRO</Badge>
-                          )}
-                        </div>
-                        {typeof source.confidence === 'number' && source.confidence > 0 && (
-                          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded mt-1 inline-block">
-                            {(source.confidence * 100).toFixed(1)}% relevance
+                      <div className="flex-1 min-w-0 flex items-center gap-2">
+                        {hasValidUrl ? (
+                          <Link
+                            href={documentUrl}
+                            className="font-medium text-blue-600 hover:text-blue-800 hover:underline transition-colors cursor-pointer truncate"
+                          >
+                            {cleanDocumentTitle(source.title)}
+                          </Link>
+                        ) : (
+                          <span className="font-medium text-gray-700 truncate">
+                            {cleanDocumentTitle(source.title)}
+                          </span>
+                        )}
+                        {source.isQproDocument && (
+                          <Badge variant="default" className="bg-blue-600 hover:bg-blue-700 text-xs">QPRO</Badge>
+                        )}
+                        {clampedConfidence > 0 && (
+                          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded shrink-0">
+                            {(clampedConfidence * 100).toFixed(0)}%
                           </span>
                         )}
                       </div>
-                      {/* Only show external link icon if we have a valid URL */}
                       {hasValidUrl && (
-                        <Link 
-                          href={documentUrl} 
+                        <Link
+                          href={documentUrl}
                           className="text-blue-600 hover:text-blue-800 transition-colors shrink-0"
                         >
                           <ExternalLink className="w-4 h-4" />
