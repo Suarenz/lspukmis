@@ -6,7 +6,8 @@ export async function GET(request: NextRequest) {
   try {
     const authResult = await requireAuth(request);
     if ('status' in authResult) return authResult;
-    
+    const { user } = authResult;
+
     // Get all units with document counts and QPRO analysis counts
     const units = await prisma.unit.findMany({
       select: {
@@ -32,7 +33,10 @@ export async function GET(request: NextRequest) {
       score: unit._count.documents + (unit._count.qproAnalyses * 5), // arbitrary scoring: 1 pt per doc, 5 per QPRO
     })).sort((a, b) => b.score - a.score);
 
-    return NextResponse.json(leaderboard);
+    return NextResponse.json({
+      leaderboard,
+      userUnitId: user.unitId || null,
+    });
   } catch (error) {
     console.error("Error fetching unit leaderboard:", error);
     return NextResponse.json(

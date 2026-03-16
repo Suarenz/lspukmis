@@ -13,12 +13,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Loader2, AlertCircle, BookOpen, Zap, BarChart3, Lightbulb, AlertTriangle, Target, Clock, CheckCircle2, Edit2, RefreshCw, TrendingUp } from 'lucide-react';
-import KRAReviewComponent, { KRAClassification } from './kra-review-component';
-import RecommendationsDisplay, { Recommendation } from './recommendations-display';
+import { Loader2, AlertCircle, BarChart3, Lightbulb, Target, Clock, CheckCircle2, RefreshCw, TrendingUp, Activity, Users, Calendar, FolderOpen } from 'lucide-react';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Cell } from 'recharts';
+import { KRAClassification } from './kra-review-component';
+import { Recommendation } from './recommendations-display';
 import KPIDashboard, { KPIGroup, KPIActivity } from './kpi-dashboard';
 import AuthService from '@/lib/services/auth-service';
-import ReactMarkdown from 'react-markdown';
 
 // Helper function to safely render prescriptive analysis items
 // Handles strings, objects with action/timeline fields, and arrays
@@ -158,41 +159,6 @@ function extractPrescriptiveValue(data: any): string | null {
   }
   
   return null;
-}
-
-// Get status styling based on achievement percentage
-function getAchievementStatus(achievement: number): {
-  level: 'critical' | 'warning' | 'success'; 
-  label: string; 
-  bgColor: string; 
-  textColor: string;
-  borderColor: string;
-} {
-  if (achievement < 50) {
-    return {
-      level: 'critical',
-      label: 'CRITICAL ALERT',
-      bgColor: 'bg-red-100',
-      textColor: 'text-red-900',
-      borderColor: 'border-red-500'
-    };
-  }
-  if (achievement < 80) {
-    return {
-      level: 'warning',
-      label: 'NEEDS ATTENTION',
-      bgColor: 'bg-amber-100',
-      textColor: 'text-amber-900',
-      borderColor: 'border-amber-500'
-    };
-  }
-  return {
-    level: 'success',
-    label: 'ON TRACK',
-    bgColor: 'bg-green-100',
-    textColor: 'text-green-900',
-    borderColor: 'border-green-500'
-  };
 }
 
 // Get priority badge color
@@ -840,432 +806,673 @@ export default function QPROAnalysisDetail({
   // Check if we have any organized activities to show
   const hasOrganizedActivities = analysis.organizedActivities.length > 0 && allFlattenedActivities.length > 0;
 
+  // Compute KPI completion rate from actual KPI group data (replaces hardcoded overallScore)
+  const avgKpiCompletion = hasKPIData
+    ? Math.round(kpiGroups.reduce((sum, k) => sum + k.completionPercentage, 0) / kpiGroups.length)
+    : analysis.achievementMetrics.overallScore;
+
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-start justify-between">
-            <div className="flex-1">
-              <CardTitle className="text-2xl">{analysis.title}</CardTitle>
-              <p className="text-sm text-slate-600 mt-1">
-                Uploaded{' '}
-                {new Date(analysis.uploadedDate).toLocaleDateString('en-US', {
-                  month: 'short',
-                  day: 'numeric',
-                  year: 'numeric',
-                })}
-              </p>
+    <div className="space-y-4">
+
+      {/* Redesigned Header Card */}
+      <Card className="overflow-hidden border shadow-sm">
+        <div className="bg-linear-to-r from-slate-800 to-slate-700 px-6 py-5">
+          <div className="flex items-start gap-4">
+            <div className="flex-1 min-w-0">
+              <h1 className="text-xl font-bold text-white leading-tight truncate">
+                {analysis.title}
+              </h1>
+              <div className="flex items-center gap-3 mt-2">
+                <span className="text-slate-400 text-xs flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5" />
+                  {new Date(analysis.uploadedDate).toLocaleDateString('en-US', {
+                    month: 'short', day: 'numeric', year: 'numeric',
+                  })}
+                </span>
+                <Badge className={
+                  analysis.status === 'COMPLETED' || analysis.status === 'APPROVED'
+                    ? 'bg-green-500 hover:bg-green-500 text-white text-xs border-0'
+                    : analysis.status === 'DRAFT'
+                    ? 'bg-slate-500 hover:bg-slate-500 text-white text-xs border-0'
+                    : 'bg-amber-500 hover:bg-amber-500 text-white text-xs border-0'
+                }>
+                  {analysis.status}
+                </Badge>
+              </div>
             </div>
-            <Badge className="bg-green-100 text-green-800">
-              {analysis.status}
-            </Badge>
           </div>
-        </CardHeader>
-        <CardContent className="grid grid-cols-3 gap-4">
-          <div className="p-4 bg-slate-50 rounded-lg">
-            <p className="text-xs text-slate-600 uppercase font-semibold">
-              Overall Score
-            </p>
-            <p className="text-3xl font-bold text-slate-900 mt-1">
-              {analysis.achievementMetrics.overallScore}%
-            </p>
-          </div>
-          <div className="p-4 bg-slate-50 rounded-lg">
-            <p className="text-xs text-slate-600 uppercase font-semibold">
-              Data Completeness
-            </p>
-            <p className="text-3xl font-bold text-slate-900 mt-1">
-              {analysis.achievementMetrics.completeness}%
-            </p>
-          </div>
-          <div className="p-4 bg-slate-50 rounded-lg">
-            <p className="text-xs text-slate-600 uppercase font-semibold">
-              KRAs Covered
-            </p>
-            <p className="text-3xl font-bold text-slate-900 mt-1">
-              {analysis.kraClassifications.length}
-            </p>
+        </div>
+        <CardContent className="p-0">
+          <div className="grid grid-cols-3 divide-x divide-slate-100">
+            {/* KPI Completion */}
+            <div className="p-5">
+              <p className="text-[10px] text-slate-500 uppercase font-semibold tracking-wider">KPI Completion</p>
+              <p className={`text-4xl font-bold mt-1.5 ${
+                avgKpiCompletion >= 80 ? 'text-green-600' :
+                avgKpiCompletion >= 50 ? 'text-amber-600' : 'text-red-600'
+              }`}>
+                {avgKpiCompletion}%
+              </p>
+              <div className="mt-2 bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                <div
+                  className={`h-full rounded-full ${
+                    avgKpiCompletion >= 80 ? 'bg-green-500' :
+                    avgKpiCompletion >= 50 ? 'bg-amber-400' : 'bg-red-500'
+                  }`}
+                  style={{ width: `${Math.min(avgKpiCompletion, 100)}%` }}
+                />
+              </div>
+            </div>
+            {/* Data Completeness */}
+            <div className="p-5">
+              <p className="text-[10px] text-slate-500 uppercase font-semibold tracking-wider">Data Completeness</p>
+              <p className="text-4xl font-bold text-slate-800 mt-1.5">
+                {analysis.achievementMetrics.completeness}%
+              </p>
+              <div className="mt-2 bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-blue-500"
+                  style={{ width: `${Math.min(analysis.achievementMetrics.completeness, 100)}%` }}
+                />
+              </div>
+            </div>
+            {/* KRAs Covered */}
+            <div className="p-5">
+              <p className="text-[10px] text-slate-500 uppercase font-semibold tracking-wider">KRAs Covered</p>
+              <p className="text-4xl font-bold text-slate-800 mt-1.5">
+                {analysis.kraClassifications.length}
+                <span className="text-sm font-normal text-slate-500 ml-1">areas</span>
+              </p>
+              <div className="mt-2 flex flex-wrap gap-1">
+                {analysis.kraClassifications.slice(0, 4).map((kra) => (
+                  <span key={kra.id} className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-medium">
+                    {kra.id}
+                  </span>
+                ))}
+                {analysis.kraClassifications.length > 4 && (
+                  <span className="text-[10px] bg-slate-100 text-slate-400 px-1.5 py-0.5 rounded">
+                    +{analysis.kraClassifications.length - 4}
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Feature: KPI Dashboard (all 5 features integrated) */}
-      {hasKPIData && (
-        <>
-          <KPIDashboard
-            kpiGroups={kpiGroups}
-            selectedYear={Number((analysis as any)?.year) || new Date().getFullYear()}
-          />
-        </>
-      )}
+      {/* Tab Navigation */}
+      <Tabs defaultValue="overview" className="w-full">
+        <TabsList className="grid w-full grid-cols-4 h-10 bg-slate-100 p-1 rounded-lg">
+          <TabsTrigger value="overview" className="text-sm flex items-center gap-1.5">
+            <BarChart3 className="w-3.5 h-3.5" />
+            Overview
+          </TabsTrigger>
+          <TabsTrigger value="kpi-performance" className="text-sm flex items-center gap-1.5">
+            <TrendingUp className="w-3.5 h-3.5" />
+            KPI Performance
+          </TabsTrigger>
+          <TabsTrigger value="ai-insights" className="text-sm flex items-center gap-1.5">
+            <Lightbulb className="w-3.5 h-3.5" />
+            AI Insights
+          </TabsTrigger>
+          <TabsTrigger value="activities" className="text-sm flex items-center gap-1.5">
+            <Activity className="w-3.5 h-3.5" />
+            Activities
+          </TabsTrigger>
+        </TabsList>
 
-      {/* Fallback: Stage 1 for non-KPI data */}
-      {!hasKPIData && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <BookOpen className="w-5 h-5" />
-              Stage 1: Content Segmentation
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {analysis.extractedSections.length === 0 ? (
-              <p className="text-slate-600 text-sm">No sections extracted</p>
-            ) : (
-              analysis.extractedSections.map((section, idx) => (
-                <div key={idx} className="p-4 bg-slate-50 rounded-lg">
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="font-semibold text-slate-900">
-                      {section.title || section.type || 'Unnamed Section'}
-                    </h4>
-                    <Badge variant="outline">{section.type}</Badge>
-                  </div>
-                  <div className="text-sm text-slate-700 space-y-1">
-                    {section.activities && Array.isArray(section.activities) && section.activities.length > 0 ? (
-                      <>
-                        {section.activities.map((activity, i) => (
-                          <p key={i} className="text-slate-600">
-                            • {activity}
-                          </p>
-                        ))}
-                      </>
-                    ) : (
-                      <p className="text-slate-500 italic">No activities in this section</p>
-                    )}
+        {/* ── OVERVIEW TAB ── */}
+        <TabsContent value="overview" className="mt-4 space-y-4">
+
+          {/* KPI Status Quick Counts */}
+          {hasKPIData && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[
+                { label: 'Met',         count: kpiGroups.filter(k => k.status === 'MET').length,         cardClass: 'bg-green-50 border-green-200', textClass: 'text-green-900', dot: 'bg-green-500' },
+                { label: 'On Track',    count: kpiGroups.filter(k => k.status === 'ON_TRACK').length,    cardClass: 'bg-blue-50 border-blue-200',   textClass: 'text-blue-900',  dot: 'bg-blue-500'  },
+                { label: 'Partial',     count: kpiGroups.filter(k => k.status === 'PARTIAL').length,     cardClass: 'bg-amber-50 border-amber-200', textClass: 'text-amber-900', dot: 'bg-amber-500' },
+                { label: 'Not Started', count: kpiGroups.filter(k => k.status === 'NOT_STARTED').length, cardClass: 'bg-red-50 border-red-200',     textClass: 'text-red-900',   dot: 'bg-red-500'   },
+              ].map(({ label, count, cardClass, textClass, dot }) => (
+                <div key={label} className={`p-4 rounded-lg border flex items-center gap-3 ${cardClass}`}>
+                  <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${dot}`} />
+                  <div>
+                    <p className={`text-3xl font-bold ${textClass}`}>{count}</p>
+                    <p className={`text-[10px] font-semibold uppercase tracking-wider opacity-70 ${textClass}`}>{label}</p>
                   </div>
                 </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Stage 2: KRA Classification Review */}
-      {analysis.kraClassifications.length > 0 && (
-        <KRAReviewComponent
-          classifications={analysis.kraClassifications}
-          isApproved={analysis.status === 'APPROVED' || analysis.status === 'COMPLETED'}
-        />
-      )}
-
-      {/* Stage 3: Organized Activities (non-KPI view) */}
-      {!hasKPIData && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Zap className="w-5 h-5" />
-                Stage 3: Structured Data Organization
-              </CardTitle>
-              {changedActivityIds.size > 0 && (
-                <Button
-                  onClick={handleRegenerateInsights}
-                  disabled={isRegenerating}
-                  className="bg-indigo-600 hover:bg-indigo-700"
-                  size="sm"
-                >
-                  {isRegenerating ? (
-                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                  ) : (
-                    <RefreshCw className="w-4 h-4 mr-2" />
-                  )}
-                  {isRegenerating ? 'Regenerating...' : `Regenerate (${changedActivityIds.size})`}
-                </Button>
-              )}
+              ))}
             </div>
-            {changedActivityIds.size > 0 && (
-              <p className="text-sm text-indigo-600 mt-2">
-                {changedActivityIds.size} activity(ies) have changed KRA. Click "Regenerate" to update AI insights.
+          )}
+
+          {/* KRA Coverage Breakdown */}
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <FolderOpen className="w-4 h-4 text-slate-500" />
+                  KRA Coverage Breakdown
+                </CardTitle>
+                {(analysis.status === 'APPROVED' || analysis.status === 'COMPLETED') && (
+                  <Badge variant="outline" className="text-green-700 border-green-400 text-xs">
+                    <CheckCircle2 className="w-3 h-3 mr-1" />
+                    Verified
+                  </Badge>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {analysis.kraClassifications.reduce((s, k) => s + k.count, 0)} total records across {analysis.kraClassifications.length} Key Result Areas
               </p>
-            )}
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {!hasOrganizedActivities ? (
-              <p className="text-slate-600 text-sm">
-                No activities organized yet
-              </p>
-            ) : (
-              analysis.organizedActivities.map((org) => {
-                // Map KRA ID to readable title
-                const kraTitle = getKRADisplayTitle(org.kraId, org.kraTitle);
-                return (
-                <div key={org.kraId} className="p-4 border rounded-lg">
-                  <div className="flex items-center justify-between mb-3">
-                    <h4 className="font-semibold text-slate-900">
-                      {kraTitle}
-                    </h4>
-                    <Badge variant="outline" className="text-slate-600">
-                      {org.activityCount} activities
-                    </Badge>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {analysis.kraClassifications.length === 0 ? (
+                <p className="text-sm text-slate-500 text-center py-4">No KRA classifications found</p>
+              ) : (
+                analysis.kraClassifications.map((kra) => {
+                  const title = KRA_TITLES[kra.id] || kra.title || kra.id;
+                  const pct = Math.min(kra.achievementRate ?? 0, 100);
+                  return (
+                    <div key={kra.id}>
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-[10px] font-bold text-slate-400 w-12 shrink-0 uppercase tracking-wide">{kra.id}</span>
+                          <span className="text-sm font-medium text-slate-800 truncate">{title}</span>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0 ml-3">
+                          <span className="text-xs text-slate-500">{kra.count} records</span>
+                          {pct > 0 && (
+                            <span className={`text-xs font-bold ${pct >= 80 ? 'text-green-600' : pct >= 50 ? 'text-amber-600' : 'text-red-600'}`}>
+                              {pct.toFixed(0)}%
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      {pct > 0 && (
+                        <div className="ml-14 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${pct >= 80 ? 'bg-green-500' : pct >= 50 ? 'bg-amber-400' : 'bg-red-400'}`}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Context Block - Current / Target State */}
+          {(analysis.achievementMetrics.currentState || analysis.achievementMetrics.targetState) && (
+            <Card className="bg-slate-50 border-slate-200">
+              <CardContent className="pt-5 pb-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                  {analysis.achievementMetrics.currentState && (
+                    <div>
+                      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Current State</p>
+                      <p className="text-sm text-slate-700 leading-relaxed">{analysis.achievementMetrics.currentState}</p>
+                    </div>
+                  )}
+                  {analysis.achievementMetrics.targetState && (
+                    <div>
+                      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Target State</p>
+                      <p className="text-sm text-slate-700 leading-relaxed">{analysis.achievementMetrics.targetState}</p>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+        </TabsContent>
+
+        {/* ── KPI PERFORMANCE TAB ── */}
+        <TabsContent value="kpi-performance" className="mt-4 space-y-4">
+          {hasKPIData ? (
+            <>
+              {/* Horizontal Bar Chart */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">KPI Achievement Overview</CardTitle>
+                  <p className="text-xs text-slate-500">Completion percentage per KPI — color indicates status</p>
+                </CardHeader>
+                <CardContent>
+                  <div style={{ height: Math.max(200, kpiGroups.length * 44 + 40) }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        layout="vertical"
+                        data={kpiGroups.map(k => ({
+                          name: k.kpiId,
+                          completion: Math.min(k.completionPercentage, 150),
+                          status: k.status,
+                        }))}
+                        margin={{ top: 4, right: 40, left: 8, bottom: 4 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
+                        <XAxis
+                          type="number"
+                          domain={[0, 100]}
+                          tickFormatter={(v) => `${v}%`}
+                          tick={{ fontSize: 11, fill: '#94a3b8' }}
+                          axisLine={false}
+                          tickLine={false}
+                        />
+                        <YAxis
+                          type="category"
+                          dataKey="name"
+                          tick={{ fontSize: 11, fill: '#64748b' }}
+                          width={70}
+                          axisLine={false}
+                          tickLine={false}
+                        />
+                        <RechartsTooltip
+                          formatter={(value: number, _name: string, props: any) => [
+                            `${kpiGroups.find(k => k.kpiId === props.payload.name)?.completionPercentage ?? value}%`,
+                            'Completion',
+                          ]}
+                          contentStyle={{
+                            borderRadius: '8px',
+                            border: '1px solid #e2e8f0',
+                            fontSize: '12px',
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+                          }}
+                        />
+                        <Bar dataKey="completion" radius={[0, 4, 4, 0]} maxBarSize={20}>
+                          {kpiGroups.map((entry, i) => (
+                            <Cell
+                              key={`cell-${i}`}
+                              fill={
+                                entry.status === 'MET'       ? '#22c55e' :
+                                entry.status === 'ON_TRACK'  ? '#3b82f6' :
+                                entry.status === 'PARTIAL'   ? '#f59e0b' :
+                                                               '#ef4444'
+                              }
+                            />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
                   </div>
+                  {/* Legend */}
+                  <div className="flex flex-wrap gap-4 mt-3 justify-center border-t border-slate-100 pt-3">
+                    {[
+                      { color: '#22c55e', label: 'Met' },
+                      { color: '#3b82f6', label: 'On Track' },
+                      { color: '#f59e0b', label: 'Partial' },
+                      { color: '#ef4444', label: 'Not Started' },
+                    ].map(({ color, label }) => (
+                      <div key={label} className="flex items-center gap-1.5">
+                        <div className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: color }} />
+                        <span className="text-xs text-slate-500">{label}</span>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Existing KPIDashboard (unchanged) */}
+              <KPIDashboard
+                kpiGroups={kpiGroups}
+                selectedYear={Number((analysis as any)?.year) || new Date().getFullYear()}
+              />
+            </>
+          ) : (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+                <BarChart3 className="w-12 h-12 text-slate-200 mb-3" />
+                <p className="font-medium text-slate-600">No KPI performance data available</p>
+                <p className="text-sm text-slate-400 mt-1">KPI data appears once activities are mapped to specific KPIs in the strategic plan.</p>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        {/* ── AI INSIGHTS TAB ── */}
+        <TabsContent value="ai-insights" className="mt-4 space-y-4">
+          {(() => {
+            const isJsonLike = (value: unknown) => {
+              if (typeof value !== 'string') return false;
+              const t = value.trim();
+              if (!t) return false;
+              return (t.startsWith('{') && t.endsWith('}')) || (t.startsWith('[') && t.endsWith(']'));
+            };
+
+            const isNullishText = (value: unknown) => {
+              if (typeof value !== 'string') return false;
+              const t = value.trim().toLowerCase();
+              return t === 'null' || t === 'undefined';
+            };
+
+            const documentInsightText = (() => {
+              const fromJson = (analysis.prescriptiveAnalysis && typeof analysis.prescriptiveAnalysis === 'object')
+                ? (analysis.prescriptiveAnalysis as any).documentInsight
+                : null;
+              if (typeof fromJson === 'string' && fromJson.trim()) return fromJson.trim();
+              const parts = [analysis.alignment, analysis.opportunities, analysis.gaps]
+                .filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
+                .filter((v) => !isJsonLike(v))
+                .map((v) => v.trim());
+              return parts.join('\n\n');
+            })();
+
+            const prescriptiveText = (() => {
+              const fromJson = (analysis.prescriptiveAnalysis && typeof analysis.prescriptiveAnalysis === 'object')
+                ? (analysis.prescriptiveAnalysis as any).prescriptiveAnalysis
+                : null;
+              if (typeof fromJson === 'string' && fromJson.trim()) return fromJson.trim();
+              if (Array.isArray(analysis.recommendations) && analysis.recommendations.length > 0) {
+                return analysis.recommendations
+                  .map((rec) => {
+                    const metaParts = [rec.timeline, rec.owner].filter(Boolean);
+                    const meta = metaParts.length > 0 ? ` (${metaParts.join(' • ')})` : '';
+                    const priority = rec.priority ? `[${rec.priority}] ` : '';
+                    const title = rec.title?.trim() ? `${rec.title.trim()}: ` : '';
+                    const desc = rec.description?.trim() ? rec.description.trim() : '';
+                    return `- ${priority}${title}${desc}${meta}`.trim();
+                  })
+                  .filter((line) => line !== '-')
+                  .join('\n');
+              }
+              const fallback = extractPrescriptiveValue(analysis.prescriptiveAnalysis) || '';
+              return isNullishText(fallback) ? '' : fallback;
+            })();
+
+            const structuredItems: PrescriptiveItem[] = (() => {
+              const fromJson = (() => {
+                if (!analysis.prescriptiveAnalysis || typeof analysis.prescriptiveAnalysis !== 'object') return [];
+                const items = (analysis.prescriptiveAnalysis as any).prescriptiveItems;
+                if (!Array.isArray(items)) return [];
+                return items
+                  .filter((x: any) => x && typeof x === 'object')
+                  .slice(0, 5)
+                  .map((x: any) => ({
+                    title: String(x.title || '').trim(),
+                    issue: String(x.issue || '').trim(),
+                    action: String(x.action || '').trim(),
+                    nextStep: x.nextStep ? String(x.nextStep).trim() : undefined,
+                    relatedKpiId: x.relatedKpiId ? String(x.relatedKpiId).trim() : undefined,
+                    responsibleOffice: x.responsibleOffice ? String(x.responsibleOffice).trim() : undefined,
+                    priority: ['HIGH', 'MEDIUM', 'LOW'].includes(x.priority) ? x.priority : undefined,
+                    authorizedStrategy: x.authorizedStrategy ? String(x.authorizedStrategy).trim() : undefined,
+                    timeframe: x.timeframe ? String(x.timeframe).trim() : undefined,
+                  }))
+                  .filter((x: any) => x.title && x.issue && x.action);
+              })();
+              if (fromJson.length > 0) return fromJson;
+              return prescriptiveText ? parsePrescriptiveTextToItems(prescriptiveText).slice(0, 5) : [];
+            })();
+
+            const shouldShow = Boolean(documentInsightText || prescriptiveText || structuredItems.length > 0);
+
+            if (!shouldShow) return (
+              <Card>
+                <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+                  <Lightbulb className="w-12 h-12 text-slate-200 mb-3" />
+                  <p className="font-medium text-slate-600">No AI insights available yet</p>
+                  <p className="text-sm text-slate-400 mt-1">Insights are generated after document analysis completes.</p>
+                </CardContent>
+              </Card>
+            );
+
+            return (
+              <div className="space-y-4">
+
+                {/* Document Insight Card */}
+                {documentInsightText && (
+                  <Card className="border-blue-200 overflow-hidden">
+                    <div className="h-1 bg-blue-500" />
+                    <CardHeader className="pb-3 pt-4">
+                      <CardTitle className="text-sm font-semibold text-blue-900 flex items-center gap-2">
+                        <Target className="w-4 h-4 text-blue-600" />
+                        Document Insight
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-sm text-slate-700 leading-relaxed">
+                        {renderFormattedText(documentInsightText)}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Structured Prescriptive Items */}
+                {structuredItems.length > 0 && (
                   <div className="space-y-3">
+                    <div className="flex items-center justify-between px-0.5">
+                      <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">
+                        Action Items ({structuredItems.length})
+                      </h3>
+                      <div className="flex gap-2">
+                        {(['HIGH', 'MEDIUM', 'LOW'] as const).map((p) => (
+                          <span key={p} className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            p === 'HIGH'   ? 'bg-red-100 text-red-700' :
+                            p === 'MEDIUM' ? 'bg-amber-100 text-amber-700' :
+                                             'bg-blue-100 text-blue-700'
+                          }`}>{p}</span>
+                        ))}
+                      </div>
+                    </div>
+
+                    {structuredItems.map((item, idx) => (
+                      <Card
+                        key={idx}
+                        className={`border-l-4 overflow-hidden shadow-sm ${
+                          item.priority === 'HIGH'   ? 'border-l-red-500' :
+                          item.priority === 'MEDIUM' ? 'border-l-amber-500' :
+                          item.priority === 'LOW'    ? 'border-l-blue-500' :
+                                                       'border-l-slate-300'
+                        }`}
+                      >
+                        <CardContent className="pt-4 pb-4 space-y-3">
+                          {/* Header Row */}
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-semibold text-slate-900 text-sm leading-tight">{item.title}</span>
+                              {item.priority && (
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                  item.priority === 'HIGH'   ? 'bg-red-100 text-red-700' :
+                                  item.priority === 'MEDIUM' ? 'bg-amber-100 text-amber-700' :
+                                                               'bg-blue-100 text-blue-700'
+                                }`}>{item.priority}</span>
+                              )}
+                              {item.relatedKpiId && (
+                                <span className="text-[10px] font-medium bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full border border-purple-200">
+                                  {item.relatedKpiId}
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-xs text-slate-300 font-mono shrink-0">
+                              #{String(idx + 1).padStart(2, '0')}
+                            </span>
+                          </div>
+
+                          {/* Field Rows */}
+                          <div className="space-y-2">
+                            <div className="flex gap-3">
+                              <span className="text-[10px] font-bold uppercase text-slate-400 w-16 shrink-0 tracking-wider pt-0.5">Issue</span>
+                              <p className="text-sm text-slate-700 flex-1 leading-relaxed">{item.issue}</p>
+                            </div>
+                            <div className="flex gap-3">
+                              <span className="text-[10px] font-bold uppercase text-slate-400 w-16 shrink-0 tracking-wider pt-0.5">Action</span>
+                              <p className="text-sm text-slate-800 flex-1 font-medium leading-relaxed">{item.action}</p>
+                            </div>
+                            {item.nextStep && (
+                              <div className="flex gap-3">
+                                <span className="text-[10px] font-bold uppercase text-slate-400 w-16 shrink-0 tracking-wider pt-0.5">Next</span>
+                                <p className="text-sm text-slate-700 flex-1 leading-relaxed">{item.nextStep}</p>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Footer Meta Row */}
+                          {(item.responsibleOffice || item.timeframe || item.authorizedStrategy) && (
+                            <div className="pt-2.5 border-t border-slate-100 flex flex-wrap gap-4">
+                              {item.responsibleOffice && (
+                                <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                                  <Users className="w-3 h-3 shrink-0" />
+                                  <span>{item.responsibleOffice}</span>
+                                </div>
+                              )}
+                              {item.timeframe && (
+                                <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                                  <Clock className="w-3 h-3 shrink-0" />
+                                  <span>{item.timeframe}</span>
+                                </div>
+                              )}
+                              {item.authorizedStrategy && (
+                                <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                                  <Target className="w-3 h-3 shrink-0" />
+                                  <span className="italic">{item.authorizedStrategy}</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+
+                {/* Fallback: legacy unstructured prescriptive text */}
+                {structuredItems.length === 0 && prescriptiveText && (
+                  <Card className="border-purple-200 overflow-hidden">
+                    <div className="h-1 bg-purple-400" />
+                    <CardHeader className="pb-3 pt-4">
+                      <CardTitle className="text-sm font-semibold text-purple-900 flex items-center gap-2">
+                        <Lightbulb className="w-4 h-4 text-purple-600" />
+                        Prescriptive Analysis
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="p-4 bg-purple-50 rounded-lg text-sm text-purple-900 leading-relaxed">
+                        {renderFormattedText(prescriptiveText)}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+              </div>
+            );
+          })()}
+        </TabsContent>
+
+        {/* ── ACTIVITIES TAB ── */}
+        <TabsContent value="activities" className="mt-4 space-y-4">
+
+          {/* Regenerate Banner */}
+          {changedActivityIds.size > 0 && (
+            <div className="flex items-center justify-between gap-4 p-3 bg-indigo-50 border border-indigo-200 rounded-lg">
+              <p className="text-sm text-indigo-700">
+                <strong>{changedActivityIds.size}</strong> KRA assignment(s) changed. Regenerate to update AI insights.
+              </p>
+              <Button
+                onClick={handleRegenerateInsights}
+                disabled={isRegenerating}
+                className="bg-indigo-600 hover:bg-indigo-700 shrink-0"
+                size="sm"
+              >
+                {isRegenerating
+                  ? <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  : <RefreshCw className="w-4 h-4 mr-2" />
+                }
+                {isRegenerating ? 'Regenerating...' : 'Regenerate Insights'}
+              </Button>
+            </div>
+          )}
+
+          {!hasOrganizedActivities ? (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+                <Activity className="w-12 h-12 text-slate-200 mb-3" />
+                <p className="font-medium text-slate-600">No activities organized yet</p>
+                <p className="text-sm text-slate-400 mt-1">Activities appear after document processing completes.</p>
+              </CardContent>
+            </Card>
+          ) : (
+            analysis.organizedActivities.map((org) => {
+              const kraTitle = getKRADisplayTitle(org.kraId, org.kraTitle);
+              return (
+                <Card key={org.kraId}>
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <div className="min-w-0">
+                        <CardTitle className="text-sm font-semibold text-slate-800 truncate">{kraTitle}</CardTitle>
+                        <p className="text-xs text-slate-400 mt-0.5">{org.kraId}</p>
+                      </div>
+                      <Badge variant="outline" className="text-slate-500 text-xs shrink-0">
+                        {org.activityCount} {org.activityCount === 1 ? 'activity' : 'activities'}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
                     {org.activities && Array.isArray(org.activities) && org.activities.length > 0 ? (
-                      <>
-                        {org.activities.map((activity, i) => {
-                          const achievement = activity.achievement ?? 0;
-                          const activityId = `${org.kraId}-${i}`;
-                          const selectedKraId = editedKRAs[activityId] || org.kraId;
-                          const isChanged = changedActivityIds.has(activityId);
-                          
-                          return (
-                          <div key={i} className={`p-3 border rounded-lg ${isChanged ? 'bg-indigo-50 border-indigo-300' : 'bg-slate-50'}`}>
+                      org.activities.map((activity, i) => {
+                        const achievement = activity.achievement ?? 0;
+                        const activityId = `${org.kraId}-${i}`;
+                        const selectedKraId = editedKRAs[activityId] || org.kraId;
+                        const isChanged = changedActivityIds.has(activityId);
+                        return (
+                          <div
+                            key={i}
+                            className={`p-3 border rounded-lg transition-colors ${
+                              isChanged ? 'bg-indigo-50 border-indigo-300' : 'bg-slate-50 border-slate-200 hover:border-slate-300'
+                            }`}
+                          >
                             <div className="flex justify-between items-start gap-4">
-                              <div className="flex-1 space-y-2">
-                                <p className="font-medium text-slate-900">{activity.title || 'Unnamed'}</p>
+                              <div className="flex-1 min-w-0 space-y-2">
+                                <p className="font-medium text-slate-900 text-sm leading-snug">{activity.title || 'Unnamed'}</p>
                                 {activity.unit && (
-                                  <p className="text-slate-500 text-xs">{activity.unit}</p>
+                                  <p className="text-slate-400 text-xs">{activity.unit}</p>
                                 )}
-                                
-                                {/* KRA Selector */}
-                                <div className="pt-2">
-                                  <Label className="text-xs text-slate-600 mb-1 block">Assign KRA:</Label>
+                                <div className="pt-1">
+                                  <Label className="text-xs text-slate-500 mb-1.5 block">Assign KRA:</Label>
                                   <Select
                                     value={selectedKraId}
                                     onValueChange={(v) => handleKRAChange(activityId, v)}
                                   >
-                                    <SelectTrigger className="h-8 text-sm w-full">
+                                    <SelectTrigger className="h-8 text-xs w-full">
                                       <SelectValue placeholder="Select KRA" />
                                     </SelectTrigger>
                                     <SelectContent>
                                       {AVAILABLE_KRAS.map((kra) => (
                                         <SelectItem key={kra.id} value={kra.id}>
-                                          <span className="text-sm">
-                                            <strong>{kra.id}</strong>: {kra.title.substring(0, 50)}...
-                                          </span>
+                                          <strong>{kra.id}</strong>: {kra.title.substring(0, 50)}...
                                         </SelectItem>
                                       ))}
                                     </SelectContent>
                                   </Select>
-                                  {selectedKraId && selectedKraId !== org.kraId && (
-                                    <p className="text-xs text-indigo-600 mt-1 font-medium">KRA Changed ✓</p>
+                                  {isChanged && (
+                                    <p className="text-xs text-indigo-600 mt-1 font-medium">KRA Changed</p>
                                   )}
                                 </div>
-
-                                {/* AI Insight moved to Document-Level summary in Review Modal - not shown per-activity */}
                               </div>
-                              
-                              <div className="text-right ml-4 shrink-0">
-                                <span className="block font-bold text-slate-900">
+                              <div className="text-right shrink-0 ml-4">
+                                <span className="block font-bold text-slate-900 text-sm">
                                   {activity.reported}{achievement > 0 ? '%' : ''}
                                 </span>
                                 <span className={`text-xs font-medium ${
-                                  achievement >= 100 ? 'text-green-600' : 
-                                  achievement > 0 ? 'text-yellow-600' : 'text-slate-500'
+                                  achievement >= 100 ? 'text-green-600' :
+                                  achievement > 0    ? 'text-amber-600' : 'text-slate-400'
                                 }`}>
-                                  {achievement >= 100 ? 'MET' : 
-                                   achievement > 0 ? `${Math.round(achievement)}%` : 'Pending'}
+                                  {achievement >= 100  ? 'MET' :
+                                   achievement > 0     ? `${Math.round(achievement)}%` : 'Pending'}
                                 </span>
                               </div>
                             </div>
                           </div>
-                        )})}
-                      </>
+                        );
+                      })
                     ) : (
-                      <p className="text-slate-500 italic">No activities</p>
+                      <p className="text-sm text-slate-500 italic">No activities</p>
                     )}
-                  </div>
-                </div>
-              );})
-            )}
-          </CardContent>
-        </Card>
-      )}
+                  </CardContent>
+                </Card>
+              );
+            })
+          )}
 
-      {/* AI Prescriptive Analysis - Display approved analysis */}
-      {(() => {
-        const isJsonLike = (value: unknown) => {
-          if (typeof value !== 'string') return false;
-          const t = value.trim();
-          if (!t) return false;
-          // Avoid rendering raw JSON blobs in the UI.
-          return (t.startsWith('{') && t.endsWith('}')) || (t.startsWith('[') && t.endsWith(']'));
-        };
+        </TabsContent>
 
-        const isNullishText = (value: unknown) => {
-          if (typeof value !== 'string') return false;
-          const t = value.trim().toLowerCase();
-          return t === 'null' || t === 'undefined';
-        };
-
-        const documentInsightText = (() => {
-          const fromJson = (analysis.prescriptiveAnalysis && typeof analysis.prescriptiveAnalysis === 'object')
-            ? (analysis.prescriptiveAnalysis as any).documentInsight
-            : null;
-          if (typeof fromJson === 'string' && fromJson.trim()) return fromJson.trim();
-
-          const parts = [analysis.alignment, analysis.opportunities, analysis.gaps]
-            .filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
-            .filter((v) => !isJsonLike(v))
-            .map((v) => v.trim());
-          return parts.join('\n\n');
-        })();
-
-        const prescriptiveText = (() => {
-          const fromJson = (analysis.prescriptiveAnalysis && typeof analysis.prescriptiveAnalysis === 'object')
-            ? (analysis.prescriptiveAnalysis as any).prescriptiveAnalysis
-            : null;
-          if (typeof fromJson === 'string' && fromJson.trim()) return fromJson.trim();
-
-          if (Array.isArray(analysis.recommendations) && analysis.recommendations.length > 0) {
-            // Convert structured recommendations into a single markdown block.
-            // This preserves the "ONE Prescriptive Analysis" UI while staying type-safe.
-            return analysis.recommendations
-              .map((rec) => {
-                const metaParts = [rec.timeline, rec.owner].filter(Boolean);
-                const meta = metaParts.length > 0 ? ` (${metaParts.join(' • ')})` : '';
-                const priority = rec.priority ? `[${rec.priority}] ` : '';
-                const title = rec.title?.trim() ? `${rec.title.trim()}: ` : '';
-                const desc = rec.description?.trim() ? rec.description.trim() : '';
-                return `- ${priority}${title}${desc}${meta}`.trim();
-              })
-              .filter((line) => line !== '-')
-              .join('\n');
-          }
-
-          const fallback = extractPrescriptiveValue(analysis.prescriptiveAnalysis) || '';
-          return isNullishText(fallback) ? '' : fallback;
-        })();
-
-        const structuredItems: PrescriptiveItem[] = (() => {
-          const fromJson = (() => {
-            if (!analysis.prescriptiveAnalysis || typeof analysis.prescriptiveAnalysis !== 'object') return [];
-            const items = (analysis.prescriptiveAnalysis as any).prescriptiveItems;
-            if (!Array.isArray(items)) return [];
-            return items
-              .filter((x: any) => x && typeof x === 'object')
-              .slice(0, 5)
-              .map((x: any) => ({
-                title: String(x.title || '').trim(),
-                issue: String(x.issue || '').trim(),
-                action: String(x.action || '').trim(),
-                nextStep: x.nextStep ? String(x.nextStep).trim() : undefined,
-                relatedKpiId: x.relatedKpiId ? String(x.relatedKpiId).trim() : undefined,
-                responsibleOffice: x.responsibleOffice ? String(x.responsibleOffice).trim() : undefined,
-                priority: ['HIGH', 'MEDIUM', 'LOW'].includes(x.priority) ? x.priority : undefined,
-                authorizedStrategy: x.authorizedStrategy ? String(x.authorizedStrategy).trim() : undefined,
-                timeframe: x.timeframe ? String(x.timeframe).trim() : undefined,
-              }))
-              .filter((x: any) => x.title && x.issue && x.action);
-          })();
-
-          if (fromJson.length > 0) return fromJson;
-          return prescriptiveText ? parsePrescriptiveTextToItems(prescriptiveText).slice(0, 5) : [];
-        })();
-
-        const shouldShow = Boolean(documentInsightText || prescriptiveText || structuredItems.length > 0);
-        if (!shouldShow) return null;
-
-        return (
-          <Card className="overflow-hidden">
-          <CardHeader className="bg-purple-50 border-b border-purple-200">
-            <CardTitle className="flex items-center gap-2 text-lg text-purple-900">
-              <Lightbulb className="w-5 h-5 text-purple-700" />
-              Prescriptive Analysis
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4 pt-6">
-            {documentInsightText && (
-              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                <h4 className="font-semibold text-blue-900 mb-2 flex items-center gap-2">
-                  <Target className="w-4 h-4" />
-                  Document Insight
-                </h4>
-                <div className="text-sm text-blue-800 prose prose-sm prose-blue max-w-none">
-                  {renderFormattedText(documentInsightText)}
-                </div>
-              </div>
-            )}
-
-            {(structuredItems.length > 0 || prescriptiveText) && (
-              <div className="p-4 bg-purple-50 border border-purple-200 rounded-lg">
-                <h4 className="font-semibold text-purple-900 mb-2 flex items-center gap-2">
-                  <Lightbulb className="w-4 h-4" />
-                  Prescriptive Analysis
-                </h4>
-                <div className="text-sm text-purple-800 prose prose-sm prose-purple max-w-none">
-                  {structuredItems.length > 0 ? (
-                    <ol className="list-decimal list-inside space-y-3">
-                      {structuredItems.map((item, idx) => (
-                        <li key={idx} className="">
-                          <span className="font-semibold text-purple-900">{item.title}</span>
-                          {item.priority && (
-                            <span className={`ml-2 inline-block text-[10px] px-1.5 py-0 rounded-full font-medium ${item.priority === 'HIGH' ? 'bg-red-100 text-red-700' : item.priority === 'MEDIUM' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
-                              {item.priority}
-                            </span>
-                          )}
-                          {item.relatedKpiId && (
-                            <span className="ml-2 inline-block text-[10px] px-1.5 py-0 rounded-full font-medium bg-purple-100 text-purple-700 border border-purple-200">
-                              {item.relatedKpiId}
-                            </span>
-                          )}
-
-                          <ul className="list-disc ml-6 mt-1 space-y-1">
-                            <li>
-                              <span className="font-semibold">Issue:</span> {item.issue}
-                            </li>
-                            <li>
-                              <span className="font-semibold">Action:</span> {item.action}
-                            </li>
-                            {item.nextStep ? (
-                              <li>
-                                <span className="font-semibold">Next Step:</span> {item.nextStep}
-                              </li>
-                            ) : null}
-                            {item.responsibleOffice ? (
-                              <li>
-                                <span className="font-semibold">Responsible Office:</span> {item.responsibleOffice}
-                              </li>
-                            ) : null}
-                            {item.authorizedStrategy ? (
-                              <li>
-                                <span className="font-semibold">Strategic Plan Strategy:</span> <em>{item.authorizedStrategy}</em>
-                              </li>
-                            ) : null}
-                            {item.timeframe ? (
-                              <li>
-                                <span className="font-semibold">Timeframe:</span> {item.timeframe}
-                              </li>
-                            ) : null}
-                          </ul>
-                        </li>
-                      ))}
-                    </ol>
-                  ) : (
-                    renderFormattedText(prescriptiveText)
-                  )}
-                </div>
-              </div>
-            )}
-          </CardContent>
-          </Card>
-        );
-      })()}
-
-      {/* Achievement Summary */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Target Achievement Summary</CardTitle>
-        </CardHeader>
-        <CardContent className="grid grid-cols-2 gap-4">
-          <div className="p-4 bg-slate-50 rounded-lg">
-            <p className="text-xs text-slate-600 uppercase font-semibold mb-2">
-              Current State
-            </p>
-            <p className="text-slate-900 font-medium">
-              {analysis.achievementMetrics.currentState}
-            </p>
-          </div>
-          <div className="p-4 bg-slate-50 rounded-lg">
-            <p className="text-xs text-slate-600 uppercase font-semibold mb-2">
-              Target State
-            </p>
-            <p className="text-slate-900 font-medium">
-              {analysis.achievementMetrics.targetState}
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+      </Tabs>
     </div>
   );
 }

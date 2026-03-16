@@ -21,6 +21,17 @@ interface Insight {
   date: string;
 }
 
+// Client-side safety net for any markdown artifacts that slip through the API
+const stripMarkdownArtifacts = (text: string): string => {
+  return text
+    .replace(/#{1,6}\s*/g, '')
+    .replace(/\*{1,3}(.*?)\*{1,3}/g, '$1')
+    .replace(/_{1,2}(.*?)_{1,2}/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .trim();
+};
+
 export function StrategicInsightsFeed() {
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const [insights, setInsights] = useState<Insight[]>([]);
@@ -151,7 +162,7 @@ export function StrategicInsightsFeed() {
               </div>
               
               <p className="text-foreground/90 leading-relaxed font-medium">
-                "{insight.content}"
+                &ldquo;{stripMarkdownArtifacts(insight.content)}&rdquo;
               </p>
               
               <div className="flex justify-between items-center mt-1 pt-2 border-t border-border/50 text-xs text-muted-foreground">

@@ -911,10 +911,16 @@ export function buildContextAwarePromptEnrichment(
 ): string {
   const ctx = inferDomainContext(activityNames, kpiName, kraTitle);
 
+  // Include top activity names so the LLM can reference specific programs
+  const topActivities = activityNames.slice(0, 5);
+  const activitySample = topActivities.length > 0
+    ? `\nKey activities in this report: ${topActivities.map(a => `"${a}"`).join(', ')}${activityNames.length > 5 ? ` (and ${activityNames.length - 5} more)` : ''}`
+    : '';
+
   return `
 [DOMAIN CONTEXT]
-Based on the activity names and KPI context, this appears to be related to: ${ctx.domainLabel}
-Context clues: ${ctx.contextClues.join(', ')}
+Inferred domain: ${ctx.domainLabel}
+Context clues: ${ctx.contextClues.join(', ')}${activitySample}
 Recommendation framework: ${ctx.recommendationFramework}
 
 IMPORTANT: Your recommendations MUST be appropriate for this specific domain context.

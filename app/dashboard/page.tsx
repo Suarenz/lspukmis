@@ -105,7 +105,7 @@ export default function DashboardPage() {
           </div>
 
           {/* Stats Grid - Critical section, loaded immediately */}
-          {user?.role === "ADMIN" && (
+          {user?.role !== "STUDENT" && user?.role !== "EXTERNAL" && (
             <div className="mb-6">
               <Suspense fallback={<SectionLoader />}>
                 <StatsSection />

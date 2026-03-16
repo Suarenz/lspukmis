@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FileText, Users, Download, Eye, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { useAuth } from "@/lib/auth-context";
 import AuthService from "@/lib/services/auth-service";
 
 interface StatCardProps {
@@ -12,15 +13,16 @@ interface StatCardProps {
   color: string;
   bgColor: string;
   trend?: number;
+  neutral?: boolean;
   delay?: number;
 }
 
-const TrendIndicator = ({ trend }: { trend?: number }) => {
+const TrendIndicator = ({ trend, neutral }: { trend?: number; neutral?: boolean }) => {
   if (trend === undefined || trend === null) return null;
-  
+
   if (trend > 0) {
     return (
-      <span className="inline-flex items-center gap-0.5 text-xs font-medium text-emerald-600">
+      <span className={`inline-flex items-center gap-0.5 text-xs font-medium ${neutral ? "text-gray-500" : "text-emerald-600"}`}>
         <TrendingUp className="w-3 h-3" />
         +{trend} this week
       </span>
@@ -28,13 +30,18 @@ const TrendIndicator = ({ trend }: { trend?: number }) => {
   }
   if (trend < 0) {
     return (
-      <span className="inline-flex items-center gap-0.5 text-xs font-medium text-red-500">
+      <span className={`inline-flex items-center gap-0.5 text-xs font-medium ${neutral ? "text-gray-500" : "text-red-500"}`}>
         <TrendingDown className="w-3 h-3" />
         {trend} this week
       </span>
     );
   }
-  return null;
+  return (
+    <span className="inline-flex items-center gap-0.5 text-xs font-medium text-gray-400">
+      <Minus className="w-3 h-3" />
+      No change this week
+    </span>
+  );
 };
 
 const StatCard = ({ stat, delay }: { stat: StatCardProps; delay: number }) => {
@@ -69,7 +76,7 @@ const StatCard = ({ stat, delay }: { stat: StatCardProps; delay: number }) => {
           <div className="text-3xl font-bold text-gray-900 truncate">{stat.value}</div>
         )}
         <div className="mt-1">
-          <TrendIndicator trend={stat.trend} />
+          <TrendIndicator trend={stat.trend} neutral={stat.neutral} />
         </div>
       </CardContent>
     </Card>
@@ -79,6 +86,8 @@ const StatCard = ({ stat, delay }: { stat: StatCardProps; delay: number }) => {
 export default function StatsSection() {
   const [stats, setStats] = useState<StatCardProps[]>([]);
   const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
+  const isUnitScoped = user?.role === "FACULTY" || user?.role === "PERSONNEL";
 
   const fetchStats = async (isPoll: boolean = false) => {
     try {
@@ -132,7 +141,7 @@ export default function StatsSection() {
         const trends = data.trends || { documents: 0, users: 0, downloads: 0, views: 0 };
         const newStats = [
           {
-            title: "Total Documents",
+            title: isUnitScoped ? "Unit Documents" : "Total Documents",
             value: data.totalDocuments.toLocaleString(),
             icon: FileText,
             color: "#2B4385",
@@ -146,9 +155,10 @@ export default function StatsSection() {
             color: "#2E8B57",
             bgColor: "rgba(46, 139, 87, 0.1)",
             trend: trends.users,
+            neutral: true,
           },
           {
-            title: "Total Downloads",
+            title: isUnitScoped ? "Unit Downloads" : "Total Downloads",
             value: data.totalDownloads.toLocaleString(),
             icon: Download,
             color: "#C04E3A",
@@ -156,7 +166,7 @@ export default function StatsSection() {
             trend: trends.downloads,
           },
           {
-            title: "Total Views",
+            title: isUnitScoped ? "Unit Views" : "Total Views",
             value: data.totalViews.toLocaleString(),
             icon: Eye,
             color: "#2B4385",

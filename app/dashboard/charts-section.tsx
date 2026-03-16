@@ -19,6 +19,7 @@ import {
   Legend,
 } from "recharts"
 import AuthService from "@/lib/services/auth-service"
+import { Upload, FolderOpen } from "lucide-react"
 
 import { lazy, Suspense } from "react"
 const KraRadarChart = lazy(() => import('./kra-radar-chart').then(m => ({ default: m.KraRadarChart })))
@@ -165,7 +166,7 @@ export default function ChartsSection() {
                 />
                 <ChartTooltip content={<ChartTooltipContent />} />
                 <Area
-                  type="monotone"
+                  type="linear"
                   dataKey="count"
                   stroke="#2B4385"
                   strokeWidth={2}
@@ -175,8 +176,10 @@ export default function ChartsSection() {
               </AreaChart>
             </ChartContainer>
           ) : (
-            <div className="h-[280px] flex items-center justify-center text-gray-400 text-sm">
-              No upload history available
+            <div className="h-[280px] flex flex-col items-center justify-center text-gray-400 text-sm">
+              <Upload className="w-10 h-10 mb-3 opacity-20" />
+              <p className="font-medium">No upload history yet</p>
+              <p className="text-xs mt-1">Upload documents to see trends over time.</p>
             </div>
           )}
         </CardContent>
@@ -216,8 +219,10 @@ export default function ChartsSection() {
               </PieChart>
             </ChartContainer>
           ) : (
-            <div className="h-[280px] flex items-center justify-center text-gray-400 text-sm">
-              No category data available
+            <div className="h-[280px] flex flex-col items-center justify-center text-gray-400 text-sm">
+              <FolderOpen className="w-10 h-10 mb-3 opacity-20" />
+              <p className="font-medium">No category data yet</p>
+              <p className="text-xs mt-1">Categorize uploaded documents to see distribution.</p>
             </div>
           )}
         </CardContent>

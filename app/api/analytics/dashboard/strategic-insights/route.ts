@@ -2,6 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireAuth } from "@/lib/middleware/auth-middleware";
 
+// Strip markdown formatting artifacts from LLM-generated text
+const stripMarkdown = (text: string): string => {
+  return text
+    .replace(/^[-*•]\s*/, '')                      // leading bullets
+    .replace(/#{1,6}\s*/g, '')                      // heading markers
+    .replace(/\*{1,3}(.*?)\*{1,3}/g, '$1')         // bold/italic with asterisks
+    .replace(/_{1,2}(.*?)_{1,2}/g, '$1')            // bold/italic with underscores
+    .replace(/`([^`]+)`/g, '$1')                    // inline code
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')        // link syntax -> keep text
+    .trim();
+};
+
 export async function GET(request: NextRequest) {
   try {
     const authResult = await requireAuth(request);
@@ -69,7 +81,7 @@ export async function GET(request: NextRequest) {
         // Split on newlines, filter empty lines, map to object
         const opps = analysis.opportunities
           .split('\n')
-          .map(line => line.replace(/^[-*•]\s*/, '').trim())
+          .map(line => stripMarkdown(line))
           .filter(Boolean)
           .map(point => ({
             id: `${analysis.id}-opp-${Math.random().toString(36).substr(2, 9)}`,
@@ -90,7 +102,7 @@ export async function GET(request: NextRequest) {
         // Split on newlines, filter empty lines, map to object
         const recs = analysis.recommendations
           .split('\n')
-          .map(line => line.replace(/^[-*•]\s*/, '').trim())
+          .map(line => stripMarkdown(line))
           .filter(Boolean)
           .map(point => ({
             id: `${analysis.id}-rec-${Math.random().toString(36).substr(2, 9)}`,

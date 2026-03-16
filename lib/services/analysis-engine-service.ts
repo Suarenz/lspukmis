@@ -41,7 +41,7 @@ const PDFParser = require('pdf2json');
 const routerModel = new ChatOpenAI({
   modelName: "gpt-4o-mini",
   temperature: 0,
-  maxTokens: 500, // Router output is short
+  maxTokens: 500, // Router output is short JSON (~100-200 tokens)
   modelKwargs: {
     response_format: { type: "json_object" },
     seed: 42,
@@ -52,7 +52,21 @@ const routerModel = new ChatOpenAI({
 const extractorModel = new ChatOpenAI({
   modelName: "gpt-4o-mini",
   temperature: 0,
-  maxTokens: 2500, // Reduced to stay within OpenRouter credit limits
+  maxTokens: 3500, // Supports ~15-25 activities in output JSON
+  modelKwargs: {
+    response_format: { type: "json_object" },
+    seed: 42,
+  },
+});
+
+// Prescriptive Model: Dedicated model for strategic prescriptive analysis generation.
+// Output JSON needs ~600-1300 tokens (documentInsight + 2-3 prescriptive items + supporting fields).
+// Using routerModel (500 tokens) here was a bug — the response was always truncated, causing
+// the system to silently fall back to deterministic logic every time.
+const prescriptiveModel = new ChatOpenAI({
+  modelName: "gpt-4o-mini",
+  temperature: 0.2, // Low temp for consistent structured JSON, slight creativity for strategic insights
+  maxTokens: 2000,
   modelKwargs: {
     response_format: { type: "json_object" },
     seed: 42,
@@ -487,13 +501,19 @@ async function generatePrescriptiveAnalysis(
   Responsible Offices="${officesText}"`;
   }).join('\n');
 
-  // Enhanced KPI summary with type category for type-aware analysis
+  // Enhanced KPI summary with type category for type-aware analysis.
+  // NOTE: Individual activity names (paper titles, event names) are intentionally excluded here
+  // to prevent the LLM from using them as bottleneck identifiers. The official KPI measure
+  // description from the strategic plan is used instead.
   const kpiSummaryText = kpiSummaries.map((k) => {
     const reportedStr = typeof k.totalReported === 'number' ? k.totalReported.toFixed(k.targetType === 'percentage' ? 1 : 0) : String(k.totalReported);
     const targetStr = typeof k.totalTarget === 'number' ? k.totalTarget.toFixed(k.targetType === 'percentage' ? 1 : 0) : String(k.totalTarget);
-    const sampleText = k.samples.length > 0 ? ` | Examples: ${k.samples.join('; ')}` : '';
     const typeInfo = `Type: ${k.targetType} (${k.kpiTypeCategory})`;
-    return `- ${k.initiativeId}: ${reportedStr} vs ${targetStr} (${k.achievementPercent.toFixed(1)}%) [${k.status}] | ${typeInfo}${sampleText}`;
+    const initiative = targetKRA?.initiatives?.find((i: any) => normalizeId(i.id) === normalizeId(k.initiativeId));
+    const kpiMeasure = initiative?.key_performance_indicator?.outputs
+      ? ` | Measures: "${initiative.key_performance_indicator.outputs}"`
+      : '';
+    return `- ${k.initiativeId}: ${reportedStr} vs ${targetStr} (${k.achievementPercent.toFixed(1)}%) [${k.status}] | ${typeInfo}${kpiMeasure}`;
   }).join('\n');
 
   // Build type-specific logic rules for each unique KPI type in this analysis
@@ -568,8 +588,9 @@ KEY DISTINCTIONS (adapt language to domain context above):
 ================================================================================
 STRATEGIC PLAN GROUNDING RULES (CRITICAL)
 ================================================================================
-- Every prescriptive item MUST reference a specific KPI ID from the performance data (e.g., ${kpiSummaries[0]?.initiativeId || 'KRA1-KPI1'})
-- Every "action" MUST cite an authorized strategy or program from the STRATEGIC PLAN SNAPSHOT above
+- Every prescriptive item MUST reference a specific KPI ID from the performance data (e.g., ${kpiSummaries[0]?.initiativeId || 'KRA1-KPI1'}) AND its official output measure from the STRATEGIC PLAN SNAPSHOT
+- Every "action" MUST directly cite or derive from a specific strategy or authorized program from the STRATEGIC PLAN SNAPSHOT above — direct quotes preferred. Do NOT generate generic actions that could apply to any institution.
+- Use the KPI's "Outcomes" to frame WHY closing this gap matters — include the institutional impact in the action or issue text
 - The "responsibleOffice" MUST match one of the offices listed in the plan for the relevant KPI
 - Priority: HIGH = achievement < 50%, MEDIUM = 50-80%, LOW = > 80%
 - Timeframe should consider the target scope (cumulative vs per-year) from the plan
@@ -578,15 +599,17 @@ STRATEGIC PLAN GROUNDING RULES (CRITICAL)
 
 TASK:
 1) Write a single Document Insight paragraph (2–4 sentences) grounded on the performance data and the strategic plan snapshot.
-   - Must reference the overall achievement percentage.
-   - Must identify the primary bottleneck KPI (lowest achievement) using the KPI ID and its reported vs target.
-   - Must correctly interpret the gap based on the KPI TYPE (see rules above).
-   - Must use language appropriate for the domain context: ${domainContext.domainLabel}.
-2) Produce Prescriptive Analysis as 2–3 items, each with:
-   - title (short, domain-appropriate)
-   - issue (one sentence, type-aware interpretation referencing the KPI ID)
-   - action (specific, using the correct action archetype AND citing an authorized strategy/program from the plan, using domain-appropriate language)
-   - nextStep (optional, immediate next action with timeframe)
+   - Start with the overall achievement percentage.
+   - Name the primary bottleneck using ONLY the KPI ID code (e.g., "KRA5-KPI9") and its official output measure from the STRATEGIC PLAN SNAPSHOT above (e.g., "faculty research outputs"). ⚠️ NEVER use individual activity names, research paper titles, training event names, or document titles as the bottleneck identifier — these are evidence items, not KPI names.
+   - State the full aggregate gap in absolute numbers (e.g., "3 outputs submitted vs an annual target of 150").
+   - Correctly interpret the gap based on the KPI TYPE (see rules above).
+   - Identify the systemic pattern (e.g., capacity constraint, quality gap, process delay) grounded in strategies from the strategic plan snapshot.
+   - Use language appropriate for the domain context: ${domainContext.domainLabel}.
+2) Produce Prescriptive Analysis as exactly 2–3 items, each with:
+   - title (3-6 words, domain-specific, action-oriented)
+   - issue (one sentence: Name the KPI ID, state the gap numerically, diagnose the specific root cause — NOT just "low achievement". Each item must identify a DIFFERENT root cause: staff capacity? budget allocation? process bottleneck? timeline delay? quality standards?)
+   - action (specific, citing an authorized strategy/program from the plan by name and including a quantitative target or milestone where possible)
+   - nextStep (concrete immediate action with specific timeframe, e.g., "Within 14 days, convene...")
    - relatedKpiId (the KPI ID this item addresses, e.g., "KRA3-KPI2")
    - responsibleOffice (the office from the strategic plan responsible for this action)
    - priority ("HIGH", "MEDIUM", or "LOW" based on achievement gap severity)
@@ -595,17 +618,18 @@ TASK:
   RULE: Only include a "Sustain"/"high performers" item if at least one KPI has >80% achievement. If none are >80%, DO NOT generate that item.
   RULE: Each recommendation MUST match the action archetype for its KPI type (see TYPE-AWARE RULES above).
   RULE: Every recommendation must be an actionable operational prescription. NEVER include system-internal advice like "classify KPI types" or "validate data types."
+  RULE: Never use filler phrases like "further enhance", "continue to improve", or "strengthen efforts". Be direct and specific.
 3) Also provide brief supporting fields (alignment/opportunities/gaps/recommendations) for backward compatibility.
 
 OUTPUT FORMAT (JSON):
 {
-  "documentInsight": "2-4 sentences referencing specific KPI IDs and the strategic plan, using domain-appropriate language",
+  "documentInsight": "<2-4 sentences: Start with achievement %. Name bottleneck by KPI ID + official output measure ONLY (e.g., 'KRA5-KPI9 – faculty research outputs'). NEVER use paper/activity/event titles. State aggregate gap (e.g., '3 submitted vs target of 150'). Identify systemic pattern grounded in strategic plan strategies.>",
   "prescriptiveItems": [
     {
-      "title": "short action title",
-      "issue": "one sentence, type-aware interpretation referencing KPI ID",
-      "action": "specific action citing authorized strategy/program from the plan",
-      "nextStep": "immediate next step with timeframe",
+      "title": "<3-6 word domain-specific action title>",
+      "issue": "<Name KPI ID, state gap numerically, diagnose specific root cause>",
+      "action": "<Cite specific strategy/program from plan with quantitative target>",
+      "nextStep": "<Concrete action with specific timeframe>",
       "relatedKpiId": "KRAx-KPIy",
       "responsibleOffice": "office from strategic plan",
       "priority": "HIGH|MEDIUM|LOW",
@@ -613,10 +637,10 @@ OUTPUT FORMAT (JSON):
       "timeframe": "based on target scope"
     }
   ],
-  "alignment": "2-3 sentences on strategic alignment",
-  "opportunities": ["..."],
+  "alignment": "1-2 sentences on strategic alignment",
+  "opportunities": ["1 sentence each"],
   "gaps": "Specific gaps with numbers",
-  "recommendations": ["..."]
+  "recommendations": ["1 sentence each"]
 }
 
 IMPORTANT GUIDANCE:
@@ -632,8 +656,8 @@ STRICT OUTPUT RULES:
 `;
 
   try {
-    const response = await routerModel.invoke([
-      { role: "system", content: "You are a strategic planning advisor. Output only JSON." },
+    const response = await prescriptiveModel.invoke([
+      { role: "system", content: "You are LSPU's Strategic Planning Analyst. You write direct, evidence-based prescriptive analyses grounded in the university's strategic plan. Every sentence MUST reference a specific KPI ID or metric. Never use filler phrases like 'further enhance' or 'continue to improve.' Instead, state the exact gap, the root cause hypothesis, and the concrete intervention. Output only valid JSON." },
       { role: "user", content: prompt }
     ]);
 
@@ -1644,14 +1668,15 @@ CRITICAL REMINDERS:
         const authorizedStrategy = initiative?.strategies?.[0] || 'Strategy from Strategic Plan';
         
         // Activity-level AI messages must not treat each document as needing to meet the full target.
-        // For count KPIs, show the current contribution vs the institutional target.
-        const aiInsight = targetType === 'count'
+        // For count KPIs (including low_count/high_count variants), show the current contribution vs the institutional target.
+        const isCountLike = ['count', 'low_count', 'high_count'].includes(targetType);
+        const aiInsight = isCountLike
           ? `Recorded ${reported} toward the KPI target (${resolvedInitiativeTarget || 'N/A'} for ${reportYear}).`
           : (status === 'MET'
             ? `Target achieved: ${reported} vs ${resolvedInitiativeTarget || activityTarget} (${achievement.toFixed(1)}%).`
             : `Below target: ${reported} vs ${resolvedInitiativeTarget || activityTarget} (${achievement.toFixed(1)}%).`);
 
-        const prescriptiveAnalysis = targetType === 'count'
+        const prescriptiveAnalysis = isCountLike
           ? `Continue implementing: "${authorizedStrategy}". Focus on increasing total outputs toward the KPI target across the reporting period.`
           : (status === 'MET'
             ? `Sustain performance by continuing: "${authorizedStrategy}".`

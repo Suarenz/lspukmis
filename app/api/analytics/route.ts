@@ -241,6 +241,38 @@ export async function GET(request: NextRequest) {
           timestamp: doc.createdAt,
           type: 'upload',
         }));
+
+        // Upload history for this unit: count documents per month for last 12 months
+        const uploadHistoryPromises = [];
+        for (let i = 11; i >= 0; i--) {
+          const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
+          const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
+          uploadHistoryPromises.push(
+            prisma.document.count({
+              where: {
+                unitId: userWithUnit.unitId,
+                createdAt: { gte: monthStart, lt: monthEnd },
+              },
+            }).then((count) => ({
+              date: `${monthStart.getFullYear()}-${String(monthStart.getMonth() + 1).padStart(2, '0')}`,
+              count,
+            }))
+          );
+        }
+        uploadHistory = await Promise.all(uploadHistoryPromises);
+
+        // Category distribution for this unit
+        const categories = await prisma.document.groupBy({
+          by: ['category'],
+          where: { unitId: userWithUnit.unitId },
+          _count: { category: true },
+          orderBy: { _count: { category: 'desc' } },
+          take: 10,
+        });
+        categoryDistribution = categories.map((cat) => ({
+          category: (cat.category === 'Uncategorized' || !cat.category) ? 'Other files' : cat.category,
+          count: cat._count.category,
+        }));
       }
 
       // Faculty can see total users in system

@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Activity } from "@/lib/types";
 import AuthService from "@/lib/services/auth-service";
-import { Upload, Pencil, Trash2, Eye, Download } from "lucide-react";
+import { Upload, Pencil, Trash2, Eye, Download, Clock } from "lucide-react";
 
 // Helper function to format dates in a readable way
 const formatDate = (timestamp: string | Date) => {
@@ -72,6 +72,18 @@ const getActivityIcon = (description: string) => {
   return { icon: Upload, color: '#2B4385' };
 };
 
+// Truncate long document titles in activity descriptions
+const truncateDescription = (description: string, maxTitleLength: number = 60): string => {
+  const prefixMatch = description.match(/^(.*?:\s*)(.*)/);
+  if (prefixMatch) {
+    const [, prefix, title] = prefixMatch;
+    if (title.length > maxTitleLength) {
+      return `${prefix}${title.substring(0, maxTitleLength)}…`;
+    }
+  }
+  return description;
+};
+
 const ActivityItem = ({ activity, delay }: { activity: Activity; delay?: number }) => {
   const style = delay !== undefined ? { animationDelay: `${delay}s` } : {};
   const { icon: Icon, color: iconColor } = getActivityIcon(activity.description);
@@ -93,7 +105,7 @@ const ActivityItem = ({ activity, delay }: { activity: Activity; delay?: number 
         {initials}
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-gray-900 line-clamp-2 leading-snug">{activity.description}</p>
+        <p className="text-sm font-medium text-gray-900 line-clamp-2 leading-snug" title={activity.description}>{truncateDescription(activity.description)}</p>
         <div className="flex items-center gap-1.5 mt-0.5">
           <Icon className="w-3 h-3 shrink-0" style={{ color: iconColor }} />
           <p className="text-xs text-gray-600 truncate">
@@ -192,7 +204,11 @@ export default function ActivitySection() {
                 <ActivityItem key={activity.id} activity={activity} delay={index * 0.1} />
               ))
             ) : (
-              <p className="text-sm text-gray-500">No recent activity to display.</p>
+              <div className="flex flex-col items-center justify-center py-10 text-gray-400">
+                <Clock className="w-10 h-10 mb-3 opacity-20" />
+                <p className="text-sm font-medium">No recent activity</p>
+                <p className="text-xs mt-1">Activity will appear here as documents are uploaded.</p>
+              </div>
             )}
           </div>
         </CardContent>

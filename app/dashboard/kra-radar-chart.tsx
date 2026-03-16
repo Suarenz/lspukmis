@@ -13,7 +13,7 @@ import {
   Tooltip,
 } from "recharts";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2 } from "lucide-react";
+import { Loader2, Target } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface RadarData {
@@ -83,8 +83,10 @@ export function KraRadarChart() {
           <CardTitle>Key Result Areas</CardTitle>
           <CardDescription>Overall Achievement Distribution</CardDescription>
         </CardHeader>
-        <CardContent className="flex items-center justify-center h-[300px] text-muted-foreground">
-          No KRA data available
+        <CardContent className="flex flex-col items-center justify-center h-[300px] text-muted-foreground">
+          <Target className="w-10 h-10 mb-3 opacity-20" />
+          <p className="font-medium">No KRA data available</p>
+          <p className="text-xs mt-1 text-center">Submit QPRO analyses to populate achievement data.</p>
         </CardContent>
       </Card>
     );
@@ -101,7 +103,7 @@ export function KraRadarChart() {
           <ResponsiveContainer width="100%" height="100%">
             <RadarChart cx="50%" cy="50%" outerRadius="80%" data={data}>
               <PolarGrid />
-              <PolarAngleAxis dataKey="kra" tick={{ fill: 'currentColor' }} />
+              <PolarAngleAxis dataKey="kra" tick={{ fill: 'currentColor', fontSize: 11 }} />
               <PolarRadiusAxis angle={30} domain={[0, 100]} />
               <Tooltip
                 content={({ active, payload }) => {

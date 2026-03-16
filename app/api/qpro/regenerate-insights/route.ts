@@ -294,12 +294,25 @@ export async function POST(request: NextRequest) {
     const allKRAs = strategicPlanJson.kras || [];
     const reportYear = analysis.year || 2025;
 
-    // Initialize OpenAI LLM
-    const llm = new ChatOpenAI({
+    // Initialize OpenAI LLMs — separate instances for different tasks
+    // KPI matching needs short JSON output (~100-200 tokens) — 500 is adequate
+    const matchingLlm = new ChatOpenAI({
       model: 'gpt-4o-mini',
       apiKey: process.env.OPENAI_API_KEY,
-      temperature: 0.7,
+      temperature: 0,
       maxTokens: 500,
+    });
+
+    // Prescriptive analysis needs rich JSON output (~600-1300 tokens)
+    // Previous 500-token limit caused truncation -> JSON parse failure -> always fell back to hardcoded logic
+    const prescriptiveLlm = new ChatOpenAI({
+      model: 'gpt-4o-mini',
+      apiKey: process.env.OPENAI_API_KEY,
+      temperature: 0.2, // Low temp for structured JSON, slight creativity for insights
+      maxTokens: 2000,
+      modelKwargs: {
+        response_format: { type: "json_object" },
+      },
     });
 
     // Regenerate KPI/target/achievement for each activity (document-level insights only)
@@ -335,7 +348,7 @@ export async function POST(request: NextRequest) {
         } else {
           // Otherwise, use LLM to match the activity to the best KPI within the selected KRA
           const kpiMatch = await matchActivityToKPI(
-            llm,
+            matchingLlm,
             activity.name,
             activity.description || activity.name,
             activity.kraId,
@@ -537,32 +550,6 @@ export async function POST(request: NextRequest) {
            `- ${isRateSummary ? 'Target rate' : 'Total target'}: ${overallSummary.target.toFixed(2)}${isRateSummary ? '%' : ''}\n`)
         : '');
 
-    // Screenshot-style document insight paragraph (plain text, no markdown)
-    // Treat "high performers" as activities with >80% achievement.
-    // If none meet that threshold, do not mention strengths and do NOT generate a Sustain section.
-    const strongestHighPerformer = updatedActivities
-      .filter((a: any) => Number(a?.achievement || 0) > 80)
-      .slice()
-      .sort((a: any, b: any) => (Number(b.achievement || 0) - Number(a.achievement || 0)))[0];
-    const bottleneck = missedActivities
-      .slice()
-      .sort((a: any, b: any) => (Number(a.achievement || 0) - Number(b.achievement || 0)))[0];
-
-    const documentInsightPlain = (() => {
-      const parts: string[] = [];
-      parts.push(`The report indicates an overall achievement score of ${overallAchievementScore.toFixed(2)}% across ${updatedActivities.length} tracked activities.`);
-      if (kraList) {
-        parts.push(`Coverage spans ${kraIds.length} KRA(s): ${kraList}.`);
-      }
-      if (strongestHighPerformer?.name) {
-        parts.push(`Key strengths appear in "${strongestHighPerformer.name}" (${Number(strongestHighPerformer.achievement || 0).toFixed(1)}% of target).`);
-      }
-      if (bottleneck?.name) {
-        parts.push(`Performance is primarily constrained by "${bottleneck.name}", which is at ${Number(bottleneck.achievement || 0).toFixed(1)}% of target, suggesting a volume or reporting pipeline bottleneck rather than a technical output issue.`);
-      }
-      return parts.join(' ');
-    })();
-
     // Create detailed opportunities text based on actual results
     let opportunitiesText = '';
     if (metActivities.length > 0) {
@@ -643,6 +630,53 @@ export async function POST(request: NextRequest) {
       .map((act: any) => `- "${act.name}": Type is ${act.kpiType.toUpperCase()} (RATE/PERCENTAGE) - diagnose as QUALITY issue, NOT volume/pipeline issue`)
       .join('\n');
 
+    // Build KPI-level aggregate groups for LLM prompt.
+    // Individual activity names (paper titles, event names) must NOT appear as bottleneck
+    // identifiers in the document insight. We group by KPI ID and compute aggregates so the
+    // LLM only sees "KRA5-KPI9 – faculty research outputs: 3 / 150" rather than a paper title.
+    const kpiGroupMap = new Map<string, {
+      kpiId: string; kraTitle: string; kpiType: string; kpiCategory: string;
+      totalReported: number; target: number; achievement: number; status: string;
+      gapType: string; actionArchetype: string; antiPattern: string | undefined;
+      itemCount: number; kpiOutputDescription: string; kpiOutcomeDescription: string;
+    }>();
+    for (const act of activitiesContext) {
+      const key = String(act.kpiId || 'unknown');
+      const existing = kpiGroupMap.get(key);
+      if (existing) {
+        existing.totalReported += Number(act.reported || 0);
+        existing.itemCount += 1;
+        existing.achievement = existing.target > 0
+          ? Math.min(100, (existing.totalReported / existing.target) * 100)
+          : 0;
+        existing.status = existing.achievement >= 100 ? 'MET' : existing.achievement >= 80 ? 'ON_TRACK' : 'MISSED';
+      } else {
+        const normalizedKraForLookup = normalizeKraId(String(act.kpiId || '').split('-KPI')[0]);
+        const kraForLookup = allKRAs.find((k: any) => normalizeKraId(k.kra_id) === normalizedKraForLookup);
+        const normInitId = normalizeInitiativeId(String(act.kpiId || ''));
+        const initiativeForLookup = kraForLookup?.initiatives?.find((i: any) => normalizeInitiativeId(String(i.id)) === normInitId);
+        kpiGroupMap.set(key, {
+          kpiId: act.kpiId,
+          kraTitle: act.kraTitle,
+          kpiType: act.kpiType,
+          kpiCategory: act.kpiCategory,
+          totalReported: Number(act.reported || 0),
+          target: Number(act.target || 0),
+          achievement: Number(act.achievement || 0),
+          status: act.status,
+          gapType: act.gapType,
+          actionArchetype: act.actionArchetype,
+          antiPattern: act.antiPattern,
+          itemCount: 1,
+          kpiOutputDescription: initiativeForLookup?.key_performance_indicator?.outputs || 'KPI output',
+          kpiOutcomeDescription: Array.isArray(initiativeForLookup?.key_performance_indicator?.outcomes)
+            ? initiativeForLookup.key_performance_indicator.outcomes.join('; ')
+            : (initiativeForLookup?.key_performance_indicator?.outcomes || ''),
+        });
+      }
+    }
+    const kpiGroups = Array.from(kpiGroupMap.values());
+
     // Call LLM for fresh prescriptive analysis
     let llmPrescriptiveResult: { documentInsight: string; prescriptiveItems: any[] } | null = null;
 
@@ -671,12 +705,11 @@ export async function POST(request: NextRequest) {
 
       // Build fresh start system message with explicit type constraints
       const systemPrompt = `[SYSTEM INSTRUCTION: FRESH START]
-You are analyzing this QPRO data from scratch. Disregard all previous analyses.
+You are LSPU's Strategic Planning Analyst generating a fresh prescriptive analysis. Disregard all previous analyses.
 
 CRITICAL METADATA UPDATE - KPI TYPES HAVE BEEN CORRECTED:
 ${kpiTypeNotices || 'All KPIs are count/volume based.'}
 
-DOMAIN CONTEXT:
 ${domainPromptEnrichment}
 
 STRICT CONSTRAINTS:
@@ -692,6 +725,12 @@ STRICT CONSTRAINTS:
 3. NEVER output meta-system warnings like "Ensure KPI types are correctly classified" or "Validate that rate KPIs focus on quality". Every recommendation must be an actionable business/operational prescription.
 4. Use domain-appropriate language for ${domainContext.domainLabel}. Do NOT use generic manufacturing/sales terminology for academic, IT, or governance contexts.
 
+OUTPUT QUALITY RULES:
+- documentInsight: Start with the overall achievement %, then name the bottleneck KPI by its ID and official output measure ONLY (e.g., "KRA5-KPI9 – faculty research outputs: 3 submitted vs target of 150"). ⚠️ NEVER use individual activity, paper, or event names as the bottleneck identifier. Then identify the systemic pattern grounded in the strategic plan.
+- prescriptiveItems: Generate exactly 2-3 items. Each must have a DIFFERENT root cause. Do not repeat "low achievement" as the issue for multiple items. Diagnose WHY: staff capacity? budget allocation? process bottleneck? timeline delay? quality standards?
+- action: Must name a SPECIFIC program/strategy from the strategic plan. Include a quantitative target where possible (e.g., "increase from 3 to 7 by Q3").
+- Never use filler phrases like "further enhance", "continue to improve", or "strengthen efforts". Be direct and specific.
+
 Respond with valid JSON only.`;
 
       const prescriptivePrompt = `[FRESH ANALYSIS REQUIRED - NEW KPI CLASSIFICATIONS]
@@ -700,17 +739,15 @@ Respond with valid JSON only.`;
 ${strategicEnrichment}
 
 **GROUNDING RULES:**
-- Every prescriptive item MUST reference a specific KPI ID (e.g., KRA3-KPI2)
-- Every "action" MUST cite an authorized strategy or program from the STRATEGIC PLAN CONTEXT above
+- Every prescriptive item MUST reference a specific KPI ID (e.g., KRA5-KPI9) and its official output measure
+- Every "action" MUST directly cite or derive from a specific authorized strategy or program in the STRATEGIC PLAN CONTEXT above — direct quotes preferred. Do NOT generate generic actions that could apply to any institution.
 - The "responsibleOffice" MUST match one of the offices listed in the plan for the relevant KPI
 - Priority: HIGH = achievement < 50%, MEDIUM = 50-80%, LOW = > 80%
+- Use the "Strategic Outcome" for each KPI to frame WHY closing this gap matters (institutional impact)
 - Do NOT invent strategies, programs, or offices that are not in the strategic plan context
 
 **KPI Type Rules (MUST FOLLOW):**
 ${typeInstructions}
-
-**DOMAIN CONTEXT (CRITICAL):**
-${domainPromptEnrichment}
 
 **ANTI-PATTERNS TO AVOID:**
 - NEVER suggest "Scale up production capacity" for academic or IT contexts
@@ -719,25 +756,27 @@ ${domainPromptEnrichment}
 
 **Summary:** ${overallAchievementScore.toFixed(2)}% achievement across ${updatedActivities.length} activities. KRAs: ${kraList}
 
-**Activities with CORRECTED KPI Types:**
-${activitiesContext.map((act: any, i: number) =>
-  `${i+1}. ${act.name}
-   - KPI: ${act.kpiId} | KPI Type: ${act.kpiType.toUpperCase()} (Category: ${act.kpiCategory})
-   - Values: ${act.reported}/${act.target} = ${act.achievement.toFixed(1)}%
-   - Status: ${act.status}
-   - Required Action Type: ${act.actionArchetype}
-   ${act.antiPattern ? `- FORBIDDEN: ${act.antiPattern}` : ''}`
+**KPIs with CORRECTED Types (aggregate view — individual item names omitted to avoid misidentification):**
+${kpiGroups.map((kpi: any, i: number) =>
+  `${i+1}. KPI: ${kpi.kpiId} — "${kpi.kpiOutputDescription}"
+   - KPI Type: ${kpi.kpiType.toUpperCase()} (Category: ${kpi.kpiCategory})
+   - Aggregate: ${kpi.totalReported} reported vs ${kpi.target} target = ${kpi.achievement.toFixed(1)}%
+   - Items Submitted: ${kpi.itemCount}
+   - Status: ${kpi.status}
+   - Strategic Outcome: ${kpi.kpiOutcomeDescription || 'N/A'}
+   - Required Action Type: ${kpi.actionArchetype}
+   ${kpi.antiPattern ? `- FORBIDDEN: ${kpi.antiPattern}` : ''}`
 ).join('\n\n')}
 
-Return JSON with this exact structure:
+Return JSON with this exact structure. Generate exactly 2-3 prescriptive items, each addressing a DIFFERENT root cause:
 {
-  "documentInsight": "<2-4 sentence summary referencing specific KPI IDs and strategic plan>",
+  "documentInsight": "<2-4 sentences: Start with overall achievement %. Name the bottleneck KPI by its ID and official output measure (e.g., 'KRA5-KPI9 – faculty research outputs: 3 submitted vs target of 150'). NEVER use individual paper/activity/event names. Identify the systemic gap pattern grounded in the strategic plan strategies.>",
   "prescriptiveItems": [
     {
-      "title": "<short action title>",
-      "issue": "<describe issue matching KPI type, referencing KPI ID>",
-      "action": "<recommendation citing an authorized strategy/program from the plan>",
-      "nextStep": "<optional immediate step with timeframe>",
+      "title": "<short action title - 3-6 words, domain-specific>",
+      "issue": "<One sentence: Name the KPI ID, state the gap numerically, diagnose the root cause (NOT just 'low achievement'). Different root cause per item.>",
+      "action": "<Cite a specific authorized strategy/program from the plan. Include a quantitative target or milestone.>",
+      "nextStep": "<Concrete immediate action with specific timeframe (e.g., 'Within 14 days, convene...')>",
       "relatedKpiId": "<KRAx-KPIy>",
       "responsibleOffice": "<office from strategic plan>",
       "priority": "<HIGH|MEDIUM|LOW>",
@@ -749,7 +788,7 @@ Return JSON with this exact structure:
 
 REMEMBER: For RATE/PERCENTAGE KPIs, the issue is NEVER about "collecting more data" or "scaling pipelines". It's about IMPROVING QUALITY.`;
 
-      const llmResponse = await llm.invoke([
+      const llmResponse = await prescriptiveLlm.invoke([
         new SystemMessage(systemPrompt),
         new HumanMessage(prescriptivePrompt),
       ]);
@@ -766,40 +805,41 @@ REMEMBER: For RATE/PERCENTAGE KPIs, the issue is NEVER about "collecting more da
     // Fallback or use LLM result - now type-aware based on KPI classification
     const prescriptiveItems = llmPrescriptiveResult?.prescriptiveItems || (() => {
       const items: Array<{ title: string; issue: string; action: string; nextStep?: string }> = [];
-      if (bottleneck?.name) {
-        // Get the KPI type for the bottleneck to generate type-appropriate recommendations
-        const bottleneckContext = activitiesContext.find((a: any) => a.name === bottleneck.name);
-        const bottleneckKpiType = bottleneckContext?.kpiType || 'count';
-        const bottleneckCategory = bottleneckContext?.kpiCategory || 'VOLUME';
-        
+
+      // Use KPI-level bottleneck (NOT activity-level) to avoid surfacing paper/event titles
+      const sortedForFallback = kpiGroups.slice().sort((a, b) => a.achievement - b.achievement);
+      const kpiBottleneckFallback = sortedForFallback[0];
+      const kpiStrongestFallback = kpiGroups.filter(k => k.achievement > 80).sort((a, b) => b.achievement - a.achievement)[0];
+
+      if (kpiBottleneckFallback?.kpiId) {
+        const bottleneckCategory = kpiBottleneckFallback.kpiCategory;
         let issueDescription = '';
         let actionRecommendation = '';
-        
+
         if (bottleneckCategory === 'EFFICIENCY') {
-          // Rate/percentage KPIs: QUALITY focus, NOT volume/pipeline
-          issueDescription = `"${bottleneck.name}" is at ${Number(bottleneck.achievement || 0).toFixed(1)}% of target. This is a ${bottleneckKpiType.toUpperCase()} KPI measuring quality/efficiency, NOT volume.`;
+          issueDescription = `${kpiBottleneckFallback.kpiId} (${kpiBottleneckFallback.kpiOutputDescription}) is at ${kpiBottleneckFallback.achievement.toFixed(1)}% of target. This is a rate/percentage KPI measuring quality/efficiency, NOT volume.`;
           actionRecommendation = 'Focus on improving quality of outcomes, process efficiency, curriculum alignment, or training effectiveness. Review compliance criteria and conversion rates rather than increasing volume.';
         } else if (bottleneckCategory === 'VOLUME') {
           const fallbackDomain = inferDomainContext(
             updatedActivities.map((a: any) => String(a.name || '').trim()).filter(Boolean),
-            bottleneck.name,
-            activitiesContext.find((a: any) => a.name === bottleneck.name)?.kraTitle || ''
+            kpiBottleneckFallback.kpiId,
+            kpiBottleneckFallback.kraTitle
           );
           if (fallbackDomain.domain === 'ACADEMIC_RESEARCH') {
-            issueDescription = `"${bottleneck.name}" is at ${Number(bottleneck.achievement || 0).toFixed(1)}% of target. This is a count-based KPI tracking research/academic outputs.`;
-            actionRecommendation = 'Intensify research output through faculty research load adjustments, expanded research grants, streamlined review processes, and research mentoring programs.';
+            issueDescription = `${kpiBottleneckFallback.kpiId} (${kpiBottleneckFallback.kpiOutputDescription}) shows ${kpiBottleneckFallback.totalReported} submitted vs a target of ${kpiBottleneckFallback.target} (${kpiBottleneckFallback.achievement.toFixed(1)}%). This count-based KPI is tracking research/academic outputs.`;
+            actionRecommendation = 'Intensify research output through faculty research load adjustments, expanded research grants, streamlined review processes, and research mentoring programs aligned with KRA strategies.';
           } else if (fallbackDomain.domain === 'IT_INFRASTRUCTURE') {
-            issueDescription = `"${bottleneck.name}" is at ${Number(bottleneck.achievement || 0).toFixed(1)}% of target. This is a count-based KPI tracking IT infrastructure deliverables.`;
+            issueDescription = `${kpiBottleneckFallback.kpiId} (${kpiBottleneckFallback.kpiOutputDescription}) shows ${kpiBottleneckFallback.totalReported} completed vs a target of ${kpiBottleneckFallback.target} (${kpiBottleneckFallback.achievement.toFixed(1)}%). This count-based KPI is tracking IT infrastructure deliverables.`;
             actionRecommendation = 'Accelerate IT project completion by securing procurement timelines, deploying additional technical personnel, and establishing project milestone tracking.';
           } else {
-            issueDescription = `"${bottleneck.name}" is at ${Number(bottleneck.achievement || 0).toFixed(1)}% of target. This is a count-based KPI measuring volume.`;
-            actionRecommendation = 'Increase output frequency, allocate additional resources, and streamline processes to meet volume targets.';
+            issueDescription = `${kpiBottleneckFallback.kpiId} (${kpiBottleneckFallback.kpiOutputDescription}) shows ${kpiBottleneckFallback.totalReported} vs a target of ${kpiBottleneckFallback.target} (${kpiBottleneckFallback.achievement.toFixed(1)}%). This count-based KPI requires volume scaling.`;
+            actionRecommendation = 'Increase output frequency, allocate additional resources, and streamline processes to meet the volume target in the remaining reporting period.';
           }
         } else {
-          issueDescription = `"${bottleneck.name}" is at ${Number(bottleneck.achievement || 0).toFixed(1)}% of target.`;
-          actionRecommendation = 'Conduct root cause analysis and implement targeted interventions.';
+          issueDescription = `${kpiBottleneckFallback.kpiId} (${kpiBottleneckFallback.kpiOutputDescription}) is at ${kpiBottleneckFallback.achievement.toFixed(1)}% of target (${kpiBottleneckFallback.totalReported} vs ${kpiBottleneckFallback.target}).`;
+          actionRecommendation = 'Conduct root cause analysis and implement targeted interventions aligned with the authorized strategies in the strategic plan.';
         }
-        
+
         items.push({
           title: 'Address the primary performance gap',
           issue: issueDescription,
@@ -813,11 +853,11 @@ REMEMBER: For RATE/PERCENTAGE KPIs, the issue is NEVER about "collecting more da
         });
       }
 
-      // Only add Sustain when there is actually a high-performing activity.
-      if (strongestHighPerformer?.name) {
+      // Only add Sustain when there is actually a high-performing KPI (not activity)
+      if (kpiStrongestFallback?.kpiId) {
         items.push({
           title: 'Sustain and operationalize high performers',
-          issue: `High-performing areas (e.g., "${strongestHighPerformer.name}") should be protected from regression as attention shifts to gaps.`,
+          issue: `${kpiStrongestFallback.kpiId} (${kpiStrongestFallback.kpiOutputDescription}) is performing well at ${kpiStrongestFallback.achievement.toFixed(1)}% and should be protected from regression as attention shifts to gaps.`,
           action: 'Standardize the execution approach, document evidence artifacts, and transition outputs into ongoing utilization/operations within the next quarter.',
           nextStep: 'Assign an owner to compile evidence and standard operating steps within 2 weeks.',
         });
@@ -848,24 +888,26 @@ REMEMBER: For RATE/PERCENTAGE KPIs, the issue is NEVER about "collecting more da
       .join('\n\n');
 
     // Build document-level prescriptive analysis JSON for database
-    // Use LLM-generated insight or create type-aware fallback
+    // Use LLM-generated insight or create type-aware fallback using KPI-level aggregates
     const typeAwareDocumentInsight = llmPrescriptiveResult?.documentInsight || (() => {
       const parts: string[] = [];
       parts.push(`The report indicates an overall achievement score of ${overallAchievementScore.toFixed(2)}% across ${updatedActivities.length} tracked activities.`);
       if (kraList) {
         parts.push(`Coverage spans ${kraIds.length} KRA(s): ${kraList}.`);
       }
-      if (strongestHighPerformer?.name) {
-        parts.push(`Key strengths appear in "${strongestHighPerformer.name}" (${Number(strongestHighPerformer.achievement || 0).toFixed(1)}% of target).`);
+      // Use KPI-level bottleneck/strongest — never surface individual activity/paper/event names
+      const sortedKpiGroups = kpiGroups.slice().sort((a, b) => a.achievement - b.achievement);
+      const kpiBottleneck = sortedKpiGroups[0];
+      const kpiStrongest = kpiGroups.filter(k => k.achievement > 80).sort((a, b) => b.achievement - a.achievement)[0];
+
+      if (kpiStrongest?.kpiId) {
+        parts.push(`A relative strength is ${kpiStrongest.kpiId} (${kpiStrongest.kpiOutputDescription}: ${kpiStrongest.totalReported} reported, ${kpiStrongest.achievement.toFixed(1)}% of target).`);
       }
-      if (bottleneck?.name) {
-        const bottleneckContext = activitiesContext.find((a: any) => a.name === bottleneck.name);
-        const bottleneckCategory = bottleneckContext?.kpiCategory || 'VOLUME';
-        
-        if (bottleneckCategory === 'EFFICIENCY') {
-          parts.push(`Performance is constrained by "${bottleneck.name}" (${Number(bottleneck.achievement || 0).toFixed(1)}% of target), a rate/percentage KPI indicating a quality or conversion issue that requires process optimization, not volume scaling.`);
+      if (kpiBottleneck?.kpiId) {
+        if (kpiBottleneck.kpiCategory === 'EFFICIENCY') {
+          parts.push(`Performance is constrained by ${kpiBottleneck.kpiId} (${kpiBottleneck.kpiOutputDescription}: ${kpiBottleneck.totalReported} vs target of ${kpiBottleneck.target}, ${kpiBottleneck.achievement.toFixed(1)}%), a rate/percentage KPI indicating a quality or conversion gap that requires process optimization, not volume scaling.`);
         } else {
-          parts.push(`Performance is constrained by "${bottleneck.name}" (${Number(bottleneck.achievement || 0).toFixed(1)}% of target).`);
+          parts.push(`Performance is primarily constrained by ${kpiBottleneck.kpiId} (${kpiBottleneck.kpiOutputDescription}: ${kpiBottleneck.totalReported} submitted vs target of ${kpiBottleneck.target}, ${kpiBottleneck.achievement.toFixed(1)}%), indicating an output volume gap requiring strategic intervention aligned with the university's strategic plan.`);
         }
       }
       return parts.join(' ');

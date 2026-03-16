@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import AuthService from "@/lib/services/auth-service";
@@ -17,6 +17,7 @@ interface UnitLeaderboardData {
 
 export function UnitLeaderboard() {
   const [data, setData] = useState<UnitLeaderboardData[]>([]);
+  const [userUnitId, setUserUnitId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
 
@@ -35,7 +36,8 @@ export function UnitLeaderboard() {
         }
 
         const result = await response.json();
-        setData(result);
+        setData(result.leaderboard || []);
+        setUserUnitId(result.userUnitId || null);
       } catch (error) {
         console.error("Leaderboard error:", error);
         toast({
@@ -50,6 +52,20 @@ export function UnitLeaderboard() {
 
     fetchLeaderboard();
   }, [toast]);
+
+  // Compute display list: top 5 + user's unit if not in top 5
+  const displayData = useMemo(() => {
+    const top5 = data.slice(0, 5);
+    if (!userUnitId) return top5;
+
+    const userUnitInTop5 = top5.some(u => u.id === userUnitId);
+    if (userUnitInTop5) return top5;
+
+    const userUnit = data.find(u => u.id === userUnitId);
+    if (!userUnit) return top5;
+
+    return [...top5, userUnit];
+  }, [data, userUnitId]);
 
   if (isLoading) {
     return (
@@ -88,41 +104,64 @@ export function UnitLeaderboard() {
       </CardHeader>
       <CardContent className="overflow-y-auto pt-3 custom-scrollbar flex-1">
         <div className="space-y-3">
-          {data.slice(0, 5).map((unit, index) => (
-            <div key={unit.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-              <div className="flex items-center gap-3">
-                <div className={`flex items-center justify-center w-8 h-8 rounded-full font-bold text-sm ${
-                  index === 0 ? "bg-yellow-100 text-yellow-700" :
-                  index === 1 ? "bg-gray-200 text-gray-700" :
-                  index === 2 ? "bg-orange-100 text-orange-700" :
-                  "bg-muted-foreground/20 text-muted-foreground"
+          {displayData.map((unit, index) => {
+            const actualRank = data.findIndex(u => u.id === unit.id) + 1;
+            const isOwnUnit = unit.id === userUnitId;
+            const isAfterSeparator = index >= 5;
+
+            return (
+              <div key={unit.id}>
+                {/* Separator between top 5 and user's unit */}
+                {isAfterSeparator && (
+                  <div className="text-center text-xs text-muted-foreground py-1 mb-3">• • •</div>
+                )}
+                <div className={`flex items-center justify-between p-3 rounded-lg ${
+                  isOwnUnit ? "bg-primary/10 ring-1 ring-primary/30" : "bg-muted/50"
                 }`}>
-                  {index + 1}
-                </div>
-                <div>
-                  <p className="font-semibold text-sm leading-none mb-1">{unit.code}</p>
-                  <p className="text-xs text-muted-foreground max-w-[120px] sm:max-w-[200px] truncate" title={unit.name}>
-                    {unit.name}
-                  </p>
+                  <div className="flex items-center gap-3">
+                    <div className={`flex items-center justify-center w-8 h-8 rounded-full font-bold text-sm ${
+                      actualRank === 1 ? "bg-yellow-100 text-yellow-700" :
+                      actualRank === 2 ? "bg-gray-200 text-gray-700" :
+                      actualRank === 3 ? "bg-orange-100 text-orange-700" :
+                      "bg-muted-foreground/20 text-muted-foreground"
+                    }`}>
+                      {actualRank}
+                    </div>
+                    <div>
+                      <p className="font-semibold text-sm leading-none mb-1">
+                        {unit.code}
+                        {isOwnUnit && (
+                          <span className="ml-1.5 text-[10px] text-primary font-semibold align-middle">YOU</span>
+                        )}
+                      </p>
+                      <p className="text-xs text-muted-foreground max-w-[120px] sm:max-w-[200px] truncate" title={unit.name}>
+                        {unit.name}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4 text-xs font-medium mr-2">
+                     <div className="w-10 flex items-center justify-center gap-1.5" title="Documents Uploaded">
+                       <FileText className="h-3.5 w-3.5 text-blue-500" />
+                       <span>{unit.documentCount}</span>
+                     </div>
+                     <div className="w-10 flex items-center justify-center gap-1.5" title="QPRO Analyses">
+                       <Activity className="h-3.5 w-3.5 text-green-500" />
+                       <span>{unit.qproCount}</span>
+                     </div>
+                     <div className="w-12 text-right font-bold text-sm tabular-nums text-primary/80">
+                       {unit.score}
+                     </div>
+                  </div>
                 </div>
               </div>
-              <div className="flex items-center gap-4 text-xs font-medium mr-2">
-                 <div className="w-10 flex items-center justify-center gap-1.5" title="Documents Uploaded">
-                   <FileText className="h-3.5 w-3.5 text-blue-500" />
-                   <span>{unit.documentCount}</span>
-                 </div>
-                 <div className="w-10 flex items-center justify-center gap-1.5" title="QPRO Analyses">
-                   <Activity className="h-3.5 w-3.5 text-green-500" />
-                   <span>{unit.qproCount}</span>
-                 </div>
-                 <div className="w-12 text-right font-bold text-sm tabular-nums text-primary/80">
-                   {unit.score}
-                 </div>
-              </div>
-            </div>
-          ))}
+            );
+          })}
           {data.length === 0 && (
-            <p className="text-sm text-muted-foreground text-center py-6">No unit activity data available yet.</p>
+            <div className="flex flex-col items-center justify-center py-6 text-muted-foreground">
+              <Trophy className="w-10 h-10 mb-3 opacity-20" />
+              <p className="text-sm font-medium">No unit activity data yet</p>
+              <p className="text-xs mt-1">Units will appear as they upload documents and analyses.</p>
+            </div>
           )}
         </div>
       </CardContent>
