@@ -581,17 +581,30 @@ export default function RepositoryPage() {
                       <p className="text-gray-500">Browse and access institutional knowledge resources</p>
                     </div>
                   </div>
-                  {user?.role !== 'STUDENT' && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-[#2B4385] border-[#2B4385] hover:bg-[#2B4385] hover:text-white shrink-0"
-                      onClick={() => router.push('/repository/browse')}
-                    >
-                      <Globe className="w-4 h-4 mr-2" />
-                      Browse All Documents
-                    </Button>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {canUpload && (
+                      <Button
+                        size="sm"
+                        className="shrink-0"
+                        style={{ backgroundColor: '#2B4385', color: 'white' }}
+                        onClick={() => setShowUploadModal(true)}
+                      >
+                        <Upload className="w-4 h-4 mr-2" />
+                        Upload Document
+                      </Button>
+                    )}
+                    {user?.role !== 'STUDENT' && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-[#2B4385] border-[#2B4385] hover:bg-[#2B4385] hover:text-white shrink-0"
+                        onClick={() => router.push('/repository/browse')}
+                      >
+                        <Globe className="w-4 h-4 mr-2" />
+                        Browse All Documents
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </div>
 

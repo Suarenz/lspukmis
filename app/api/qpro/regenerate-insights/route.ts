@@ -675,6 +675,19 @@ export async function POST(request: NextRequest) {
         });
       }
     }
+    // For percentage/rate KPIs (EFFICIENCY category), totalReported is the sum of
+    // percentage values across activities (e.g., BSCS=16% + BSIT=32% = 48), which
+    // inflates the LLM prompt. Correct to the average (e.g., (16+32)/2 = 24) using
+    // the already-tracked itemCount.
+    for (const entry of kpiGroupMap.values()) {
+      if (entry.kpiCategory === 'EFFICIENCY' && entry.itemCount > 1) {
+        entry.totalReported = entry.totalReported / entry.itemCount;
+        entry.achievement = entry.target > 0
+          ? Math.min(100, (entry.totalReported / entry.target) * 100)
+          : 0;
+        entry.status = entry.achievement >= 100 ? 'MET' : entry.achievement >= 80 ? 'ON_TRACK' : 'MISSED';
+      }
+    }
     const kpiGroups = Array.from(kpiGroupMap.values());
 
     // Call LLM for fresh prescriptive analysis

@@ -53,23 +53,23 @@ export function UnitLeaderboard() {
     fetchLeaderboard();
   }, [toast]);
 
-  // Compute display list: top 5 + user's unit if not in top 5
+  // Compute display list: top 10 + user's unit if not in top 10
   const displayData = useMemo(() => {
-    const top5 = data.slice(0, 5);
-    if (!userUnitId) return top5;
+    const top10 = data.slice(0, 10);
+    if (!userUnitId) return top10;
 
-    const userUnitInTop5 = top5.some(u => u.id === userUnitId);
-    if (userUnitInTop5) return top5;
+    const userUnitInTop10 = top10.some(u => u.id === userUnitId);
+    if (userUnitInTop10) return top10;
 
     const userUnit = data.find(u => u.id === userUnitId);
-    if (!userUnit) return top5;
+    if (!userUnit) return top10;
 
-    return [...top5, userUnit];
+    return [...top10, userUnit];
   }, [data, userUnitId]);
 
   if (isLoading) {
     return (
-      <Card className="h-full w-full max-h-[400px]">
+      <Card className="h-full w-full">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Trophy className="h-5 w-5 text-yellow-500" />
@@ -85,7 +85,7 @@ export function UnitLeaderboard() {
   }
 
   return (
-    <Card className="h-full w-full max-h-[400px] overflow-hidden flex flex-col">
+    <Card className="h-full w-full overflow-hidden flex flex-col">
       <CardHeader className="pb-3 border-b">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div>
@@ -98,7 +98,6 @@ export function UnitLeaderboard() {
           <div className="flex items-center gap-4 text-xs font-medium text-muted-foreground mr-2">
             <span className="w-10 text-center" title="Documents Uploaded">Docs</span>
             <span className="w-10 text-center" title="QPRO Analyses">Activity</span>
-            <span className="w-12 text-right">Rank ✨</span>
           </div>
         </div>
       </CardHeader>
@@ -107,7 +106,7 @@ export function UnitLeaderboard() {
           {displayData.map((unit, index) => {
             const actualRank = data.findIndex(u => u.id === unit.id) + 1;
             const isOwnUnit = unit.id === userUnitId;
-            const isAfterSeparator = index >= 5;
+            const isAfterSeparator = index >= 10;
 
             return (
               <div key={unit.id}>
@@ -148,9 +147,6 @@ export function UnitLeaderboard() {
                        <Activity className="h-3.5 w-3.5 text-green-500" />
                        <span>{unit.qproCount}</span>
                      </div>
-                     <div className="w-12 text-right font-bold text-sm tabular-nums text-primary/80">
-                       {unit.score}
-                     </div>
                   </div>
                 </div>
               </div>
@@ -164,6 +160,24 @@ export function UnitLeaderboard() {
             </div>
           )}
         </div>
+        {data.length > 0 && (
+          <div className="mt-4 pt-3 border-t flex items-center justify-around text-center">
+            <div>
+              <p className="text-base font-bold text-foreground">{data.length}</p>
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Units</p>
+            </div>
+            <div className="w-px h-8 bg-border" />
+            <div>
+              <p className="text-base font-bold text-foreground">{data.reduce((s, u) => s + u.documentCount, 0)}</p>
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Docs</p>
+            </div>
+            <div className="w-px h-8 bg-border" />
+            <div>
+              <p className="text-base font-bold text-foreground">{data.reduce((s, u) => s + u.qproCount, 0)}</p>
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Analyses</p>
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

@@ -100,7 +100,7 @@ function normalizePercentageReported(raw: unknown): number {
   v = Math.min(100, Math.max(0, v));
 
   // DB uses Int for reported; store whole-number percent
-  return Math.round(v);
+  return Math.round(v * 100) / 100;
 }
 
 // ========== ROUTER FUNCTION ==========
@@ -258,7 +258,7 @@ ${kpiContext}
 DOCUMENT TYPE DETECTION:
 - If this is a **Research Report**: Each completed research/publication/study = 1 activity
 - If this is a **Training Report**: Each training/seminar attended = 1 activity  
-- If this is an **Employment/Tracer Report**: Each program's employment rate = 1 activity
+- If this is an **Employment/Tracer Report** with multiple programs: Compute the OVERALL combined employment rate as ONE single activity by summing all employed graduates and dividing by total graduates across ALL programs (weighted average). Do NOT create one activity per program. Example: BSCS has 9/55 employed and BSIT has 58/183 employed → overall = (9+58)/(55+183) × 100 = 28.15% → report_value: 28.15, activity_name: 'Graduate Employment Rate'. Only extract the numerator/denominator columns if the % is not already computed in the table.
 - If this is a **Financial Report**: Each budget item = 1 activity
 
 CRITICAL EXTRACTION RULES:

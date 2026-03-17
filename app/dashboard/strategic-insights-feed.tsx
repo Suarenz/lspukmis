@@ -2,18 +2,21 @@
 
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Lightbulb, ArrowUpRight, Loader2, Target, CalendarDays } from "lucide-react";
+import { Zap, Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import AuthService from "@/lib/services/auth-service";
-import { formatDistanceToNow } from "date-fns";
 
-interface Insight {
+interface PriorityInsight {
   id: string;
   qproId: string;
-  type: 'OPPORTUNITY' | 'RECOMMENDATION';
-  content: string;
-  documentTitle: string;
+  priority: 'HIGH' | 'MEDIUM' | 'LOW';
+  title: string;
+  action: string;
+  relatedKpiId?: string;
+  kraName?: string;
+  responsibleOffice?: string;
+  timeframe?: string;
+  achievementScore: number | null;
   unitAcronym: string;
   unitName: string;
   year: number;
@@ -21,20 +24,99 @@ interface Insight {
   date: string;
 }
 
-// Client-side safety net for any markdown artifacts that slip through the API
-const stripMarkdownArtifacts = (text: string): string => {
-  return text
-    .replace(/#{1,6}\s*/g, '')
-    .replace(/\*{1,3}(.*?)\*{1,3}/g, '$1')
-    .replace(/_{1,2}(.*?)_{1,2}/g, '$1')
-    .replace(/`([^`]+)`/g, '$1')
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    .trim();
+interface InsightsApiResponse {
+  insights: PriorityInsight[];
+  summary: {
+    totalAnalyses: number;
+    unitsBelowThreshold: number;
+    averageAchievement: number;
+  };
+}
+
+function PriorityBadge({ priority }: { priority: PriorityInsight['priority'] }) {
+  const styles: Record<PriorityInsight['priority'], string> = {
+    HIGH:   'bg-red-600 text-white',
+    MEDIUM: 'bg-amber-500 text-white',
+    LOW:    'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
+  };
+  return (
+    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${styles[priority]}`}>
+      {priority}
+    </span>
+  );
+}
+
+function AchievementPill({ score }: { score: number | null }) {
+  if (score === null) return null;
+  let cls = 'font-bold text-red-600 dark:text-red-400';
+  if (score >= 80) cls = 'font-semibold text-green-600 dark:text-green-400';
+  else if (score >= 60) cls = 'font-semibold text-amber-600 dark:text-amber-400';
+  return (
+    <span className={`text-[11px] ${cls}`}>
+      {score}%
+    </span>
+  );
+}
+
+function InsightCard({ insight }: { insight: PriorityInsight }) {
+  const hasFooter = !!(insight.responsibleOffice || insight.timeframe);
+
+  return (
+    <div className="p-3 border rounded-lg bg-card/50 hover:border-primary/40 transition-colors">
+      {/* Row 1: priority badge | unit + score | kra tag | quarter/year */}
+      <div className="flex items-center flex-wrap gap-1.5 mb-2">
+        <PriorityBadge priority={insight.priority} />
+        <div className="flex items-center gap-1">
+          <span className="text-[11px] font-semibold text-foreground/80">
+            {insight.unitAcronym}
+          </span>
+          <AchievementPill score={insight.achievementScore} />
+        </div>
+        {insight.kraName && (
+          <span className="text-[10px] bg-blue-100 text-blue-900 dark:bg-blue-900/30 dark:text-blue-200 px-1.5 py-0.5 rounded font-medium">
+            {insight.kraName}
+          </span>
+        )}
+        <span className="text-[10px] text-muted-foreground ml-auto whitespace-nowrap">
+          Q{insight.quarter} {insight.year}
+        </span>
+      </div>
+
+      {/* Row 2: title */}
+      <p className="text-sm font-semibold text-foreground mb-1">
+        {insight.title}
+      </p>
+
+      {/* Row 3: action */}
+      <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3">
+        {insight.action}
+      </p>
+
+      {/* Footer: office and timeframe */}
+      {hasFooter && (
+        <div className="text-xs text-muted-foreground border-t border-border/40 pt-1.5 mt-1">
+          {[
+            insight.responsibleOffice ? `Office: ${insight.responsibleOffice}` : null,
+            insight.timeframe ? `Due: ${insight.timeframe}` : null,
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const EMPTY_SUMMARY: InsightsApiResponse['summary'] = {
+  totalAnalyses: 0,
+  unitsBelowThreshold: 0,
+  averageAchievement: 0,
 };
 
 export function StrategicInsightsFeed() {
   const { isAuthenticated, isLoading: authLoading } = useAuth();
-  const [insights, setInsights] = useState<Insight[]>([]);
+  const [insights, setInsights] = useState<PriorityInsight[]>([]);
+  const [summary, setSummary] = useState<InsightsApiResponse['summary']>(EMPTY_SUMMARY);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,20 +129,21 @@ export function StrategicInsightsFeed() {
         const token = await AuthService.getAccessToken();
         const response = await fetch("/api/analytics/dashboard/strategic-insights", {
           headers: {
-            Authorization: `Bearer ${token}`
-          }
+            Authorization: `Bearer ${token}`,
+          },
         });
 
         if (!response.ok) {
           throw new Error("Failed to fetch strategic insights");
         }
 
-        const data: Insight[] = await response.json();
-        setInsights(data);
+        const data: InsightsApiResponse = await response.json();
+        setInsights(data.insights ?? []);
+        setSummary(data.summary ?? EMPTY_SUMMARY);
         setError(null);
       } catch (err) {
         console.error("Error fetching insights:", err);
-        setError("Failed to load strategic insights.");
+        setError("Failed to load priority actions.");
       } finally {
         setIsLoading(false);
       }
@@ -69,17 +152,29 @@ export function StrategicInsightsFeed() {
     fetchInsights();
   }, [isAuthenticated, authLoading]);
 
-  // Handle Loading State
+  const cardHeader = (
+    <CardHeader className="pb-3">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <CardTitle className="flex items-center gap-2">
+            <Zap className="w-5 h-5 text-amber-500" />
+            Priority Actions
+          </CardTitle>
+          <CardDescription>Top recommended actions from approved unit analyses</CardDescription>
+        </div>
+        {summary.totalAnalyses > 0 && (
+          <span className="text-[11px] text-muted-foreground whitespace-nowrap pt-1 shrink-0">
+            {summary.totalAnalyses} analysed&nbsp;&middot;&nbsp;Avg {Math.round(summary.averageAchievement)}%
+          </span>
+        )}
+      </div>
+    </CardHeader>
+  );
+
   if (isLoading || authLoading) {
     return (
       <Card className="h-full">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Lightbulb className="w-5 h-5 text-amber-500" />
-            Strategic Insights & Opportunities
-          </CardTitle>
-          <CardDescription>AI-extracted insights from approved unit reports</CardDescription>
-        </CardHeader>
+        {cardHeader}
         <CardContent className="flex justify-center items-center py-10">
           <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
         </CardContent>
@@ -87,17 +182,10 @@ export function StrategicInsightsFeed() {
     );
   }
 
-  // Handle Error State
   if (error) {
     return (
       <Card className="h-full">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Lightbulb className="w-5 h-5 text-amber-500" />
-            Strategic Insights & Opportunities
-          </CardTitle>
-          <CardDescription>AI-extracted insights from approved unit reports</CardDescription>
-        </CardHeader>
+        {cardHeader}
         <CardContent>
           <div className="p-4 text-center text-sm text-destructive bg-destructive/10 rounded-lg">
             {error}
@@ -107,21 +195,14 @@ export function StrategicInsightsFeed() {
     );
   }
 
-  // Handle Empty State
   if (insights.length === 0) {
     return (
       <Card className="h-full">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Lightbulb className="w-5 h-5 text-amber-500" />
-            Strategic Insights & Opportunities
-          </CardTitle>
-          <CardDescription>AI-extracted insights from approved unit reports</CardDescription>
-        </CardHeader>
+        {cardHeader}
         <CardContent>
           <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
-            <Target className="w-10 h-10 mb-3 opacity-20" />
-            <p>No recent insights found.</p>
+            <Zap className="w-10 h-10 mb-3 opacity-20" />
+            <p className="text-sm font-medium">No priority actions yet.</p>
             <p className="text-sm">Approve more QPRO analyses to generate insights.</p>
           </div>
         </CardContent>
@@ -130,51 +211,15 @@ export function StrategicInsightsFeed() {
   }
 
   return (
-    <Card className="h-full w-full max-h-[400px] flex flex-col">
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2">
-          <Lightbulb className="w-5 h-5 text-amber-500" />
-          Strategic Insights & Opportunities
-        </CardTitle>
-        <CardDescription>AI-extracted insights from approved unit reports</CardDescription>
-      </CardHeader>
-      <CardContent className="flex-1 overflow-auto pr-2 custom-scrollbar">
-        <div className="space-y-4">
-          {insights.map((insight) => (
-            <div 
-              key={insight.id} 
-              className="group flex flex-col gap-2 p-3 text-sm border rounded-lg hover:border-primary/50 transition-colors bg-card/50"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <Badge variant={insight.type === 'OPPORTUNITY' ? 'default' : 'secondary'} className="text-[10px] h-5 px-1.5 font-medium">
-                  {insight.type === 'OPPORTUNITY' ? (
-                    <ArrowUpRight className="w-3 h-3 mr-1" />
-                  ) : (
-                    <Target className="w-3 h-3 mr-1" />
-                  )}
-                  {insight.type}
-                </Badge>
-                <div className="flex items-center text-xs text-muted-foreground">
-                  <span className="font-semibold text-foreground/80 mr-2">{insight.unitAcronym}</span>
-                  <CalendarDays className="w-3 h-3 mr-1" />
-                  <span>Q{insight.quarter} {insight.year}</span>
-                </div>
-              </div>
-              
-              <p className="text-foreground/90 leading-relaxed font-medium">
-                &ldquo;{stripMarkdownArtifacts(insight.content)}&rdquo;
-              </p>
-              
-              <div className="flex justify-between items-center mt-1 pt-2 border-t border-border/50 text-xs text-muted-foreground">
-                <span className="truncate max-w-[70%]" title={insight.documentTitle}>
-                  Ref: {insight.documentTitle}
-                </span>
-                <span>
-                  {formatDistanceToNow(new Date(insight.date), { addSuffix: true })}
-                </span>
-              </div>
-            </div>
-          ))}
+    <Card className="h-full w-full flex flex-col">
+      {cardHeader}
+      <CardContent className="flex-1 overflow-hidden px-4 pb-4 flex flex-col">
+        <div className="flex-1 overflow-auto pr-1 custom-scrollbar min-h-0">
+          <div className="space-y-3">
+            {insights.slice(0, 6).map((insight) => (
+              <InsightCard key={insight.id} insight={insight} />
+            ))}
+          </div>
         </div>
       </CardContent>
     </Card>

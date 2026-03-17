@@ -14,7 +14,6 @@ const QuickActionsSection = lazy(() => import("./quick-actions-section"));
 const ChartsSection = lazy(() => import("./charts-section"));
 const DocumentsSection = lazy(() => import("./documents-section"));
 const ActivitySection = lazy(() => import("./activity-section"));
-const KraRadarChart = lazy(() => import("./kra-radar-chart").then((m) => ({ default: m.KraRadarChart })));
 const UnitLeaderboard = lazy(() => import("./unit-leaderboard").then((m) => ({ default: m.UnitLeaderboard })));
 const StrategicInsightsFeed = lazy(() => import("./strategic-insights-feed").then((m) => ({ default: m.StrategicInsightsFeed })));
 
@@ -123,18 +122,11 @@ export default function DashboardPage() {
             </Suspense>
           </div>
 
-          {/* KRA Radar Chart & Activity (Moved up) */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-            <div className="lg:col-span-1">
-              <Suspense fallback={<SectionLoader />}>
-                <KraRadarChart />
-              </Suspense>
-            </div>
-            <div className="lg:col-span-2">
-              <Suspense fallback={<SectionLoader />}>
-                <ActivitySection />
-              </Suspense>
-            </div>
+          {/* Activity */}
+          <div className="mb-6">
+            <Suspense fallback={<SectionLoader />}>
+              <ActivitySection />
+            </Suspense>
           </div>
 
           {/* Charts - Data Visualization (Moved down) */}
